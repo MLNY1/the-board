@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
-import { getActiveWindow, getShabbosWindow } from '@/lib/shabbos-times';
+import { getActiveWindow, getShabbosWindow, type GeoParams } from '@/lib/shabbos-times';
 import { isWeekdayYomTov } from '@/lib/yomtov-utils';
 import { fetchMarketData } from '@/lib/market-data';
 import type { DigestResponse, DigestStory, MarketData } from '@/types';
@@ -26,6 +26,13 @@ export async function GET(req: NextRequest) {
   const sinceParam  = searchParams.get('since');
   const forceMarket = searchParams.get('market') === 'true';
 
+  const latParam  = searchParams.get('lat');
+  const lngParam  = searchParams.get('lng');
+  const tzidParam = searchParams.get('tzid');
+  const geo: GeoParams | undefined = (latParam && lngParam)
+    ? { lat: parseFloat(latParam), lng: parseFloat(lngParam), tzid: tzidParam ?? 'America/New_York' }
+    : undefined;
+
   const supabase = createServerClient();
 
   try {
@@ -37,9 +44,9 @@ export async function GET(req: NextRequest) {
 
     // Fetch Shabbos/YT state and market mode concurrently
     const [activeWindow, shabbosWindow, weekdayYomTov] = await Promise.allSettled([
-      getActiveWindow(zip),
-      getShabbosWindow(zip),
-      isWeekdayYomTov(zip),
+      getActiveWindow(zip, geo),
+      getShabbosWindow(zip, geo),
+      isWeekdayYomTov(zip, geo),
     ]);
 
     const active         = activeWindow.status === 'fulfilled'   ? activeWindow.value   : null;
@@ -131,6 +138,7 @@ export async function GET(req: NextRequest) {
           window_start: (active?.start ?? shabbos?.start)?.toISOString() ?? null,
           window_end:   (active?.end   ?? shabbos?.end  )?.toISOString() ?? null,
           parsha: shabbos?.parsha ?? null,
+          location_label: shabbos?.locationLabel ?? null,
         },
         next_refresh_seconds: NEXT_REFRESH_SECONDS,
         market,

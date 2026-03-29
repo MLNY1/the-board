@@ -39,7 +39,7 @@ export default async function Page({ searchParams }: PageProps) {
   return (
     <div className="page-grid">
       {/* Left column: mobile alert strip (hidden on desktop) + main board */}
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      <div className="board-left-col" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
         <MobileAlertStrip />
         <BoardDashboard initialData={initialData} />
       </div>

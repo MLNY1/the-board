@@ -60,6 +60,9 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
   const seenIdsRef    = useRef<Set<string>>(new Set(initialData?.stories.map(s => s.id) ?? []));
   const zipRef        = useRef('');
   const marketRef     = useRef(false);
+  const latRef        = useRef<number | null>(null);
+  const lngRef        = useRef<number | null>(null);
+  const tzidRef       = useRef<string>('');
   const failCountRef  = useRef(0);
 
   const rotationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -150,7 +153,13 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
   const fetchDigest = useCallback(async () => {
     try {
       const params = new URLSearchParams();
-      if (zipRef.current)   params.set('zip',    zipRef.current);
+      if (latRef.current !== null && lngRef.current !== null) {
+        params.set('lat',  String(latRef.current));
+        params.set('lng',  String(lngRef.current));
+        if (tzidRef.current) params.set('tzid', tzidRef.current);
+      } else if (zipRef.current) {
+        params.set('zip', zipRef.current);
+      }
       if (marketRef.current) params.set('market', 'true');
 
       const res = await fetch(`/api/digest?${params}`, { cache: 'no-store' });
@@ -212,6 +221,35 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
     zipRef.current     = sp.get('zip')    ?? '';
     marketRef.current  = sp.get('market') === 'true';
 
+    // Geolocation: check localStorage first, then request from browser
+    const storedLat  = localStorage.getItem('theboard_lat');
+    const storedLng  = localStorage.getItem('theboard_lng');
+    const storedTzid = localStorage.getItem('theboard_tzid');
+    if (storedLat && storedLng) {
+      latRef.current  = parseFloat(storedLat);
+      lngRef.current  = parseFloat(storedLng);
+      tzidRef.current = storedTzid ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } else if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (!mountedRef.current) return;
+          const lat  = pos.coords.latitude;
+          const lng  = pos.coords.longitude;
+          const tzid = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          latRef.current  = lat;
+          lngRef.current  = lng;
+          tzidRef.current = tzid;
+          localStorage.setItem('theboard_lat',  String(lat));
+          localStorage.setItem('theboard_lng',  String(lng));
+          localStorage.setItem('theboard_tzid', tzid);
+          // Immediately refresh with the detected location
+          fetchDigest();
+        },
+        () => { /* denied or unavailable — silently use default zip */ },
+        { timeout: 5000 }
+      );
+    }
+
     scheduleNext('HERO', 0);
     pollTimer.current = setInterval(fetchDigest, POLL_INTERVAL_MS);
 
@@ -248,7 +286,7 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
   const isShabbosMode: boolean = data?.meta.shabbos.is_active ?? false;
   const marketData: MarketData = data?.meta.market ?? { enabled: false, prices: [], last_updated: '' };
   const shabbosWindowMeta: ShabbosWindowMeta = data?.meta.shabbos ?? {
-    is_active: false, window_start: null, window_end: null, parsha: null,
+    is_active: false, window_start: null, window_end: null, parsha: null, location_label: null,
   };
 
   const lastUpdated = data?.meta.last_updated
@@ -259,12 +297,11 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
 
   return (
     <div
-      className={isShabbosMode ? 'shabbos-mode' : ''}
+      className={`board-root${isShabbosMode ? ' shabbos-mode' : ''}`}
       style={{
         display: 'flex',
         flexDirection: 'column',
         flex: 1,
-        overflow: 'hidden',
         background: 'var(--bg-primary)',
       }}
     >

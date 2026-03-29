@@ -109,6 +109,11 @@ export default function ShabbosHeader({ shabbos, isShabbosMode }: ShabbosHeaderP
             <span style={isShabbosMode ? { color: 'var(--accent-amber)', fontWeight: 600 } : {}}>
               ✨ {yomTov ? 'Yom Tov Ends' : 'Havdalah'}{sep}{havdalahTime}
             </span>
+            {shabbos.location_label && (
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {shabbos.location_label}
+              </span>
+            )}
           </div>
         )}
       </div>

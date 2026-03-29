@@ -11,16 +11,16 @@
  * day — including weekdays when markets are open.
  */
 
-import { getActiveWindow } from './shabbos-times';
+import { getActiveWindow, type GeoParams } from './shabbos-times';
 
 /**
  * Returns true if we are currently in a weekday Yom Tov.
  * Uses the in-memory-cached Hebcal data from shabbos-times.ts.
  * Never throws — returns false on any error.
  */
-export async function isWeekdayYomTov(zip: string): Promise<boolean> {
+export async function isWeekdayYomTov(zip: string, geo?: GeoParams): Promise<boolean> {
   try {
-    const active = await getActiveWindow(zip);
+    const active = await getActiveWindow(zip, geo);
     if (!active) return false;
 
     // Active window whose name doesn't start with "Shabbat" = Yom Tov

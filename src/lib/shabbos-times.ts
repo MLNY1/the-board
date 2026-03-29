@@ -53,12 +53,20 @@ function setCached<T>(key: string, value: T, ttlMs = SIX_HOURS_MS): void {
 
 const HEBCAL_BASE = 'https://www.hebcal.com';
 
-async function fetchShabbatData(zip: string): Promise<HebcalShabbatResponse> {
-  const cacheKey = `shabbat:${zip}`;
+export interface GeoParams {
+  lat: number;
+  lng: number;
+  tzid: string;
+}
+
+async function fetchShabbatData(zip: string, geo?: GeoParams): Promise<HebcalShabbatResponse> {
+  const cacheKey = geo ? `shabbat:geo:${geo.lat},${geo.lng}` : `shabbat:${zip}`;
   const cached = getCached<HebcalShabbatResponse>(cacheKey);
   if (cached) return cached;
 
-  const url = `${HEBCAL_BASE}/shabbat?cfg=json&zip=${zip}&m=50`;
+  const url = geo
+    ? `${HEBCAL_BASE}/shabbat?cfg=json&latitude=${geo.lat}&longitude=${geo.lng}&tzid=${encodeURIComponent(geo.tzid)}&m=50`
+    : `${HEBCAL_BASE}/shabbat?cfg=json&zip=${zip}&m=50`;
   const res = await fetch(url, { next: { revalidate: 21600 } }); // 6h Next.js cache
   if (!res.ok) throw new Error(`Hebcal /shabbat returned ${res.status}`);
   const data: HebcalShabbatResponse = await res.json();
@@ -66,15 +74,17 @@ async function fetchShabbatData(zip: string): Promise<HebcalShabbatResponse> {
   return data;
 }
 
-async function fetchCalendarData(zip: string): Promise<HebcalCalendarResponse> {
-  const cacheKey = `calendar:${zip}`;
+async function fetchCalendarData(zip: string, geo?: GeoParams): Promise<HebcalCalendarResponse> {
+  const cacheKey = geo ? `calendar:geo:${geo.lat},${geo.lng}` : `calendar:${zip}`;
   const cached = getCached<HebcalCalendarResponse>(cacheKey);
   if (cached) return cached;
 
   const now = new Date();
   const year = now.getUTCFullYear();
   const month = now.getUTCMonth() + 1;
-  const url = `${HEBCAL_BASE}/hebcal?cfg=json&v=1&year=${year}&month=${month}&c=on&zip=${zip}&m=50&s=on&maj=on&mod=on`;
+  const url = geo
+    ? `${HEBCAL_BASE}/hebcal?cfg=json&v=1&year=${year}&month=${month}&c=on&latitude=${geo.lat}&longitude=${geo.lng}&tzid=${encodeURIComponent(geo.tzid)}&m=50&s=on&maj=on&mod=on`
+    : `${HEBCAL_BASE}/hebcal?cfg=json&v=1&year=${year}&month=${month}&c=on&zip=${zip}&m=50&s=on&maj=on&mod=on`;
   const res = await fetch(url, { next: { revalidate: 21600 } });
   if (!res.ok) throw new Error(`Hebcal /hebcal returned ${res.status}`);
   const data: HebcalCalendarResponse = await res.json();
@@ -112,8 +122,8 @@ function extractParsha(items: HebcalShabbatItem[]): string {
  * Returns the current or most recent Shabbos window with candle lighting,
  * havdalah times, and the parsha name.
  */
-export async function getShabbosWindow(zip: string): Promise<ShabbosWindow> {
-  const data = await fetchShabbatData(zip);
+export async function getShabbosWindow(zip: string, geo?: GeoParams): Promise<ShabbosWindow> {
+  const data = await fetchShabbatData(zip, geo);
   const items = data.items ?? [];
 
   const candleItem = items.find((i) => i.category === 'candles');
@@ -124,10 +134,23 @@ export async function getShabbosWindow(zip: string): Promise<ShabbosWindow> {
     throw new Error('Could not find candle lighting or havdalah in Hebcal response');
   }
 
+  // Build location label from Hebcal response
+  const loc = data.location;
+  let locationLabel = '';
+  if (loc) {
+    if (loc.title && !loc.zip) {
+      // Geo queries return a "title" like "Brooklyn, NY" or just a city name
+      locationLabel = loc.title;
+    } else if (loc.city) {
+      locationLabel = loc.state ? `${loc.city}, ${loc.state}` : loc.city;
+    }
+  }
+
   return {
     start: parseHebcalDate(candleItem.date),
     end: parseHebcalDate(havdalahItem.date),
     parsha,
+    locationLabel,
   };
 }
 
@@ -135,8 +158,8 @@ export async function getShabbosWindow(zip: string): Promise<ShabbosWindow> {
  * Returns upcoming Yom Tov windows for the current month.
  * Uses the /hebcal calendar endpoint filtered to yomtov entries with candles/havdalah pairs.
  */
-export async function getYomTovWindows(zip: string): Promise<YomTovWindow[]> {
-  const data = await fetchCalendarData(zip);
+export async function getYomTovWindows(zip: string, geo?: GeoParams): Promise<YomTovWindow[]> {
+  const data = await fetchCalendarData(zip, geo);
   const items: HebcalCalendarItem[] = data.items ?? [];
 
   const windows: YomTovWindow[] = [];
@@ -185,8 +208,8 @@ export async function getYomTovWindows(zip: string): Promise<YomTovWindow[]> {
 /**
  * Returns true if right now falls within Shabbos or Yom Tov for the given ZIP.
  */
-export async function isShabbosNow(zip: string): Promise<boolean> {
-  const active = await getActiveWindow(zip);
+export async function isShabbosNow(zip: string, geo?: GeoParams): Promise<boolean> {
+  const active = await getActiveWindow(zip, geo);
   return active !== null;
 }
 
@@ -196,12 +219,12 @@ export async function isShabbosNow(zip: string): Promise<boolean> {
  *
  * Checks Shabbos window first, then Yom Tov windows.
  */
-export async function getActiveWindow(zip: string): Promise<ActiveWindow | null> {
+export async function getActiveWindow(zip: string, geo?: GeoParams): Promise<ActiveWindow | null> {
   const now = new Date();
 
   // Check Shabbos
   try {
-    const shabbos = await getShabbosWindow(zip);
+    const shabbos = await getShabbosWindow(zip, geo);
     if (now >= shabbos.start && now <= shabbos.end) {
       return {
         start: shabbos.start,
@@ -215,7 +238,7 @@ export async function getActiveWindow(zip: string): Promise<ActiveWindow | null>
 
   // Check Yom Tov
   try {
-    const yomTovWindows = await getYomTovWindows(zip);
+    const yomTovWindows = await getYomTovWindows(zip, geo);
     for (const ytWindow of yomTovWindows) {
       if (now >= ytWindow.start && now <= ytWindow.end) {
         return ytWindow;

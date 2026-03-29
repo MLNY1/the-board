@@ -105,6 +105,12 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+   Board root — overflow hidden on desktop, overridden to visible on mobile
+   --------------------------------------------------------------------------- */
+
+.board-root { overflow: hidden; }
+
+/* ---------------------------------------------------------------------------
    Story fade transition (800ms ease-in-out)
    --------------------------------------------------------------------------- */
 
@@ -246,14 +252,35 @@ body {
    --------------------------------------------------------------------------- */
 
 @media (max-width: 1023px) {
-  /* Header */
-  .shabbos-header { flex-wrap: wrap !important; padding: 10px 16px !important; min-height: auto !important; }
+  /* Scrollable page on mobile */
+  html, body            { overflow: auto !important; height: auto !important; }
+  .page-grid            { height: auto !important; overflow: visible !important; }
+  .board-left-col       { height: auto !important; overflow: visible !important; }
+  .board-root           { overflow: visible !important; flex: none !important; }
+  .story-fade           { overflow: visible !important; flex: none !important; }
+
+  /* Sticky header + alert strip */
+  .shabbos-header {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 20 !important;
+    background: var(--bg-primary) !important;
+    flex-wrap: wrap !important;
+    padding: 10px 16px !important;
+    min-height: auto !important;
+  }
+  .mobile-alert-strip {
+    display: flex;
+    position: sticky !important;
+    top: 56px !important;
+    z-index: 10 !important;
+    background: var(--bg-primary) !important;
+  }
+
+  /* Header layout */
   .header-logo    { min-width: 0 !important; width: 100%; }
   .header-center  { flex: 1 !important; text-align: left !important; }
   .header-clock   { min-width: 0 !important; }
-
-  /* Mobile alert strip */
-  .mobile-alert-strip { display: flex; }
 
   /* Hero */
   .hero-outer-pad      { padding: 12px 16px 8px; }
@@ -263,10 +290,9 @@ body {
   .hero-summary        { font-size: 16px; }
   .hero-source-line    { font-size: 14px; }
 
-  /* Cards — single column, only first 2 visible */
+  /* Cards — single column, all visible (scrollable page) */
   .cards-grid                        { grid-template-columns: 1fr; }
   .cards-outer-pad                   { padding: 0 16px; }
-  .cards-grid > *:nth-child(n+3)     { display: none; }
   .card-wrapper                      { padding: 14px 16px; }
   .card-badge-text                   { font-size: 9px; padding: 2px 8px; }
   .card-headline                     { font-size: 20px; font-weight: 500; }
@@ -274,10 +300,10 @@ body {
   .card-source                       { font-size: 13px; }
 
   /* Notable */
-  .notable-container { flex-direction: column; gap: 0; padding: 6px 16px 4px; overflow-y: auto; }
+  .notable-container { flex-direction: column; gap: 0; padding: 6px 16px 4px; overflow: visible; flex: none; }
   .notable-col       { flex: none; }
   .notable-row       { flex: none; min-height: 32px; max-height: none; padding: 4px 0; }
-  .notable-text      { font-size: 14px; }
+  .notable-text      { font-size: 14px; white-space: normal !important; }
 
   /* Overview */
   .overview-cols { grid-template-columns: 1fr; }

@@ -12,6 +12,7 @@ import {
   getActiveWindow,
   getYomTovWindows,
   formatCountdown,
+  type GeoParams,
 } from '@/lib/shabbos-times';
 
 const DEFAULT_ZIP = process.env.DEFAULT_ZIP ?? '11598';
@@ -20,11 +21,18 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const zip = searchParams.get('zip') ?? DEFAULT_ZIP;
 
+  const latParam  = searchParams.get('lat');
+  const lngParam  = searchParams.get('lng');
+  const tzidParam = searchParams.get('tzid');
+  const geo: GeoParams | undefined = (latParam && lngParam)
+    ? { lat: parseFloat(latParam), lng: parseFloat(lngParam), tzid: tzidParam ?? 'America/New_York' }
+    : undefined;
+
   try {
     const [shabbosResult, activeResult, yomTovResult] = await Promise.allSettled([
-      getShabbosWindow(zip),
-      getActiveWindow(zip),
-      getYomTovWindows(zip),
+      getShabbosWindow(zip, geo),
+      getActiveWindow(zip, geo),
+      getYomTovWindows(zip, geo),
     ]);
 
     const shabbos = shabbosResult.status === 'fulfilled' ? shabbosResult.value : null;

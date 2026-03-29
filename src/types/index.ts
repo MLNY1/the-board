@@ -62,6 +62,7 @@ export interface ShabbosWindowMeta {
   /** ISO string for havdalah time */
   window_end: string | null;
   parsha: string | null;
+  location_label: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +118,7 @@ export interface ShabbosWindow {
   start: Date;
   end: Date;
   parsha: string;
+  locationLabel: string;
 }
 
 export interface YomTovWindow {
@@ -147,9 +149,11 @@ export interface HebcalShabbatResponse {
   title: string;
   date: string;
   location: {
-    zip: string;
-    city: string;
+    zip?: string;
+    city?: string;
     tzid: string;
+    state?: string;
+    title?: string;
   };
   items: HebcalShabbatItem[];
 }
