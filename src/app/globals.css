@@ -174,6 +174,113 @@ body {
 .line-clamp-3 { -webkit-line-clamp: 3; }
 
 /* ---------------------------------------------------------------------------
+   Responsive: Hero
+   --------------------------------------------------------------------------- */
+
+.hero-outer-pad      { padding: 24px 28px 16px; }
+.hero-inner-pad      { padding: 28px 32px; }
+.hero-headline       { font-size: 52px; }
+.hero-headline-major { font-size: 36px; }
+.hero-summary        { font-size: 22px; }
+.hero-source-line    { font-size: 18px; }
+
+/* ---------------------------------------------------------------------------
+   Responsive: Cards grid (desktop 4×2, mobile 1-col)
+   --------------------------------------------------------------------------- */
+
+.cards-grid      { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.cards-outer-pad { padding: 0 28px; }
+.card-wrapper    { padding: 12px 14px; }
+.card-badge-text { font-size: 8px; padding: 2px 6px; }
+.card-headline   { font-size: 15px; font-weight: 600; line-height: 1.25; color: var(--text-primary); margin-bottom: 6px; }
+.card-summary    { display: none; }
+.card-source     { font-size: 11px; }
+
+/* ---------------------------------------------------------------------------
+   Responsive: Notable list
+   --------------------------------------------------------------------------- */
+
+.notable-container { flex: 1; overflow: hidden; display: flex; gap: 0 28px; padding: 8px 28px 6px; }
+.notable-col       { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.notable-row       { flex: 1; display: flex; align-items: center; gap: 8px;
+                     border-bottom: 1px solid var(--border-subtle);
+                     min-height: 24px; max-height: 56px; overflow: hidden; }
+.notable-text      { font-size: 15px; }
+
+/* ---------------------------------------------------------------------------
+   Responsive: Overview panel
+   --------------------------------------------------------------------------- */
+
+.overview-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 32px;
+  flex: 1;
+  overflow: hidden;
+  align-content: start;
+}
+
+/* ---------------------------------------------------------------------------
+   Responsive: Board footer
+   --------------------------------------------------------------------------- */
+
+.board-footer { font-size: 13px; padding: 10px 28px; }
+
+/* ---------------------------------------------------------------------------
+   Responsive: Mobile alert strip (hidden on desktop)
+   --------------------------------------------------------------------------- */
+
+.mobile-alert-strip { display: none; }
+
+/* ---------------------------------------------------------------------------
+   Mobile breakpoint  <1024px
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 1023px) {
+  /* Header */
+  .shabbos-header { flex-wrap: wrap !important; padding: 10px 16px !important; min-height: auto !important; }
+  .header-logo    { min-width: 0 !important; width: 100%; }
+  .header-center  { flex: 1 !important; text-align: left !important; }
+  .header-clock   { min-width: 0 !important; }
+
+  /* Mobile alert strip */
+  .mobile-alert-strip { display: flex; }
+
+  /* Hero */
+  .hero-outer-pad      { padding: 12px 16px 8px; }
+  .hero-inner-pad      { padding: 16px 18px; }
+  .hero-headline       { font-size: 34px; }
+  .hero-headline-major { font-size: 30px; }
+  .hero-summary        { font-size: 16px; }
+  .hero-source-line    { font-size: 14px; }
+
+  /* Cards — single column, only first 2 visible */
+  .cards-grid                        { grid-template-columns: 1fr; }
+  .cards-outer-pad                   { padding: 0 16px; }
+  .cards-grid > *:nth-child(n+3)     { display: none; }
+  .card-wrapper                      { padding: 14px 16px; }
+  .card-badge-text                   { font-size: 9px; padding: 2px 8px; }
+  .card-headline                     { font-size: 20px; font-weight: 500; }
+  .card-summary                      { display: block; font-size: 14px;
+                                       line-height: 1.4; color: var(--text-body);
+                                       margin-bottom: 8px;
+                                       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-source                       { font-size: 13px; }
+
+  /* Notable */
+  .notable-container { flex-direction: column; gap: 0; padding: 6px 16px 4px; overflow-y: auto; }
+  .notable-col       { flex: none; }
+  .notable-row       { flex: none; min-height: 32px; max-height: none; padding: 4px 0; }
+  .notable-text      { font-size: 14px; }
+
+  /* Overview */
+  .overview-cols { grid-template-columns: 1fr; }
+
+  /* Footer */
+  .board-footer { font-size: 12px; padding: 8px 16px; }
+}
+
+/* ---------------------------------------------------------------------------
    Scrollbar — hidden everywhere
    --------------------------------------------------------------------------- */
 

@@ -232,7 +232,7 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
   const currentHero     = displayHeroes[heroIndex] ?? displayHeroes[0] ?? null;
   const supportingCards = displayHeroes
     .filter(s => s.id !== currentHero?.id)
-    .slice(0, 4);
+    .slice(0, 8);
 
   // Notable list: stories not shown in hero or supporting cards
   const shownIds    = new Set([currentHero?.id, ...supportingCards.map(s => s.id)].filter(Boolean));
@@ -257,7 +257,7 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: '100vh',
+        flex: 1,
         overflow: 'hidden',
         background: 'var(--bg-primary)',
       }}
@@ -327,59 +327,37 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
               )}
             </div>
 
-            {/* Supporting cards (up to 4 in 2×2 grid) */}
+            {/* Supporting cards — desktop 4×2 grid, mobile 1-col (first 2 via CSS) */}
             {supportingCards.length > 0 && (
-              <div style={{
-                flexShrink: 0,
-                padding: '0 28px',
-                display: 'grid',
-                gridTemplateColumns: supportingCards.length === 1 ? '1fr' : '1fr 1fr',
-                gap: '10px',
-              }}>
+              <div className="cards-grid cards-outer-pad" style={{ flexShrink: 0 }}>
                 {supportingCards.map(story => (
                   <StoryCard key={story.id} story={story} isShabbosMode={isShabbosMode} />
                 ))}
               </div>
             )}
 
-            {/* Notable list — fills remaining space, rows stretch to eliminate blank area */}
+            {/* Notable list — 2-col desktop, 1-col mobile */}
             {notableList.length > 0 && (() => {
-              const mid          = Math.ceil(notableList.length / 2);
+              const mid           = Math.ceil(notableList.length / 2);
               const leftNotables  = notableList.slice(0, mid);
               const rightNotables = notableList.slice(mid);
               return (
-                <div style={{
-                  flex: 1,
-                  overflow: 'hidden',
-                  display: 'flex',
-                  gap: '0 28px',
-                  padding: '8px 28px 6px',
-                }}>
+                <div className="notable-container">
                   {[leftNotables, rightNotables].map((col, ci) => (
-                    <div key={ci} style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                    <div key={ci} className="notable-col">
                       {col.map(story => (
-                        <div
-                          key={story.id}
-                          style={{
-                            flex: 1,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            borderBottom: '1px solid var(--border-subtle)',
-                            minHeight: '24px',
-                            maxHeight: '56px',
-                            overflow: 'hidden',
-                          }}
-                        >
+                        <div key={story.id} className="notable-row">
                           <span style={{ color: 'var(--accent-amber)', fontSize: '5px', flexShrink: 0 }}>●</span>
-                          <span style={{
-                            fontFamily: 'var(--font-body)',
-                            fontSize: '15px',
-                            color: 'var(--text-body)',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}>
+                          <span
+                            className="notable-text"
+                            style={{
+                              fontFamily: 'var(--font-body)',
+                              color: 'var(--text-body)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
                             {story.headline}
                           </span>
                         </div>
@@ -394,18 +372,19 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
       </div>
 
       {/* Footer */}
-      <div style={{
-        flexShrink: 0,
-        padding: '10px 28px',
-        borderTop: '1px solid var(--border-subtle)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '8px',
-        fontFamily: 'var(--font-body)',
-        fontSize: '13px',
-        color: 'var(--text-dim)',
-      }}>
+      <div
+        className="board-footer"
+        style={{
+          flexShrink: 0,
+          borderTop: '1px solid var(--border-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          fontFamily: 'var(--font-body)',
+          color: 'var(--text-dim)',
+        }}
+      >
         <span>{stories.length} stor{stories.length !== 1 ? 'ies' : 'y'}</span>
 
         {lastUpdated && (

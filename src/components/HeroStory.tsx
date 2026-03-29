@@ -2,9 +2,8 @@
 
 /**
  * Full-screen hero story — the centerpiece of TheBoard.
- * 52px Georgia headline (breaking), 36px (major). Soft weight 500.
- * Outlined tier badge. Optional image thumbnail top-right.
- * NEW badge fades out after 5 seconds via CSS animation.
+ * Desktop: 52px breaking / 36px major. Mobile: 34px / 30px.
+ * CSS classes handle responsive sizing; inline styles for non-responsive props.
  */
 
 import { useState } from 'react';
@@ -28,27 +27,28 @@ function formatRelativeTime(iso: string): string {
 export default function HeroStory({ story, isNew = false }: HeroStoryProps) {
   const [imgHidden, setImgHidden] = useState(false);
 
-  const isBreaking     = story.tier === 'breaking';
-  const accentColor    = isBreaking ? 'var(--accent-amber)' : 'var(--accent-major)';
-  const accentSoft     = isBreaking ? 'var(--accent-amber-soft)' : 'var(--accent-major-soft)';
-  const borderColor    = isBreaking ? 'var(--accent-amber)' : 'var(--accent-major)';
-  const bgGradient     = isBreaking
+  const isBreaking  = story.tier === 'breaking';
+  const accentColor = isBreaking ? 'var(--accent-amber)' : 'var(--accent-major)';
+  const accentSoft  = isBreaking ? 'var(--accent-amber-soft)' : 'var(--accent-major-soft)';
+  const borderColor = isBreaking ? 'var(--accent-amber)' : 'var(--accent-major)';
+  const bgGradient  = isBreaking
     ? 'linear-gradient(135deg, var(--accent-amber-glow) 0%, transparent 60%)'
     : 'linear-gradient(135deg, rgba(143,167,191,0.03) 0%, transparent 60%)';
-  const headlineSizePx = isBreaking ? '52px' : '36px';
 
   const showImage = !!story.image_url && !imgHidden;
 
   return (
-    <div style={{ padding: '24px 28px 16px' }}>
-      <div style={{
-        borderLeft: `3px solid ${borderColor}`,
-        padding: '28px 32px',
-        background: bgGradient,
-        borderRadius: '0 10px 10px 0',
-        position: 'relative',
-      }}>
-        {/* Image thumbnail — top-right, float-style via flex */}
+    <div className="hero-outer-pad">
+      <div
+        className="hero-inner-pad"
+        style={{
+          borderLeft: `3px solid ${borderColor}`,
+          background: bgGradient,
+          borderRadius: '0 10px 10px 0',
+          position: 'relative',
+        }}
+      >
+        {/* Image thumbnail — top-right float */}
         {showImage && (
           <img
             src={story.image_url!}
@@ -102,44 +102,42 @@ export default function HeroStory({ story, isNew = false }: HeroStoryProps) {
           )}
         </div>
 
-        {/* Headline */}
-        <h1 style={{
-          fontFamily: 'var(--font-headline)',
-          fontSize: headlineSizePx,
-          fontWeight: 500,
-          lineHeight: 1.12,
-          color: 'var(--text-primary)',
-          marginBottom: '14px',
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-        } as React.CSSProperties}>
+        {/* Headline — font-size from CSS class */}
+        <h1
+          className={`line-clamp-2 ${isBreaking ? 'hero-headline' : 'hero-headline-major'}`}
+          style={{
+            fontFamily: 'var(--font-headline)',
+            fontWeight: 500,
+            lineHeight: 1.12,
+            color: 'var(--text-primary)',
+            marginBottom: '14px',
+          }}
+        >
           {story.headline}
         </h1>
 
         {/* Summary */}
-        <p style={{
-          fontFamily: 'var(--font-body)',
-          fontSize: '22px',
-          lineHeight: 1.55,
-          color: 'var(--text-body)',
-          maxWidth: '750px',
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-        } as React.CSSProperties}>
+        <p
+          className="line-clamp-2 hero-summary"
+          style={{
+            fontFamily: 'var(--font-body)',
+            lineHeight: 1.55,
+            color: 'var(--text-body)',
+            maxWidth: '750px',
+          }}
+        >
           {story.summary}
         </p>
 
         {/* Source + time */}
-        <div style={{
-          marginTop: '14px',
-          fontFamily: 'var(--font-body)',
-          fontSize: '18px',
-          color: 'var(--text-muted)',
-        }}>
+        <div
+          className="hero-source-line"
+          style={{
+            marginTop: '14px',
+            fontFamily: 'var(--font-body)',
+            color: 'var(--text-muted)',
+          }}
+        >
           {story.sources.slice(0, 3).join(' · ')}
           {story.sources.length > 0 && ' · '}
           {formatRelativeTime(story.published_at)}

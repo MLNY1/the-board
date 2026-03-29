@@ -1,9 +1,10 @@
 'use client';
 
 /**
- * Compact secondary story card — shown 1-2 at a time below the hero.
- * 28px Georgia headline (weight 500), 18px summary, 16px source.
- * Outlined badge. No image.
+ * Secondary story card.
+ * Desktop (4-col grid): compact — 15px headline, no summary, 11px source.
+ * Mobile (1-col):       larger  — 20px headline, 14px summary, 13px source.
+ * CSS classes in globals.css handle all responsive sizing.
  */
 
 import type { DigestStoryItem } from '@/types';
@@ -35,64 +36,63 @@ export default function StoryCard({ story }: StoryCardProps) {
     : 'rgba(107,98,86,0.3)';
 
   return (
-    <div style={{
-      background: 'var(--bg-card)',
-      border: '1px solid var(--border-card)',
-      borderRadius: '10px',
-      padding: '18px 20px',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-    }}>
+    <div
+      className="card-wrapper"
+      style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-card)',
+        borderRadius: '8px',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}
+    >
       {/* Tier badge */}
-      <div style={{ marginBottom: '8px' }}>
-        <span style={{
-          fontFamily: 'var(--font-body)',
-          fontSize: '9px',
-          letterSpacing: '1.5px',
-          textTransform: 'uppercase',
-          color: accentColor,
-          border: `1px solid ${accentBorder}`,
-          padding: '2px 8px',
-          borderRadius: '3px',
-          background: 'transparent',
-        }}>
+      <div style={{ marginBottom: '6px' }}>
+        <span
+          className="card-badge-text"
+          style={{
+            fontFamily: 'var(--font-body)',
+            letterSpacing: '1.5px',
+            textTransform: 'uppercase',
+            color: accentColor,
+            border: `1px solid ${accentBorder}`,
+            borderRadius: '3px',
+            background: 'transparent',
+          }}
+        >
           {story.tier}
         </span>
       </div>
 
-      {/* Headline */}
-      <h2 style={{
-        fontFamily: 'var(--font-headline)',
-        fontSize: '28px',
-        fontWeight: 500,
-        lineHeight: 1.2,
-        color: 'var(--text-primary)',
-        marginBottom: '8px',
-      }}>
+      {/* Headline — 2-line clamp, size from CSS */}
+      <h2
+        className="card-headline line-clamp-2"
+        style={{
+          fontFamily: 'var(--font-headline)',
+          color: 'var(--text-primary)',
+        }}
+      >
         {story.headline}
       </h2>
 
-      {/* Summary */}
-      <p style={{
-        fontFamily: 'var(--font-body)',
-        fontSize: '18px',
-        lineHeight: 1.45,
-        color: 'var(--text-body)',
-        marginBottom: '10px',
-      }}>
+      {/* Summary — hidden on desktop, shown on mobile */}
+      <p className="card-summary" style={{ fontFamily: 'var(--font-body)' }}>
         {story.summary}
       </p>
 
       {/* Source + time */}
-      <div style={{
-        fontFamily: 'var(--font-body)',
-        fontSize: '16px',
-        color: 'var(--text-muted)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        marginTop: 'auto',
-      }}>
+      <div
+        className="card-source"
+        style={{
+          fontFamily: 'var(--font-body)',
+          color: 'var(--text-muted)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          marginTop: 'auto',
+          paddingTop: '4px',
+        }}
+      >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>
           {story.sources[0] ?? ''}
         </span>

@@ -9,7 +9,6 @@ interface ShabbosHeaderProps {
   isShabbosMode: boolean;
 }
 
-/** HH:MM AM/PM — no seconds, wall-display friendly */
 function formatClock(d: Date): string {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
@@ -35,10 +34,10 @@ export default function ShabbosHeader({ shabbos, isShabbosMode }: ShabbosHeaderP
     ? (isShabbosMode ? `Shabbat ${shabbos.parsha}` : shabbos.parsha)
     : null;
 
-  const showDay       = !isShabbosMode;
-  const candleTime    = shabbos.window_start ? formatShabbosTime(shabbos.window_start, showDay) : null;
-  const havdalahTime  = shabbos.window_end   ? formatShabbosTime(shabbos.window_end, showDay)   : null;
-  const hasTimes      = candleTime !== null && havdalahTime !== null;
+  const showDay      = !isShabbosMode;
+  const candleTime   = shabbos.window_start ? formatShabbosTime(shabbos.window_start, showDay) : null;
+  const havdalahTime = shabbos.window_end   ? formatShabbosTime(shabbos.window_end, showDay)   : null;
+  const hasTimes     = candleTime !== null && havdalahTime !== null;
 
   return (
     <header
@@ -55,7 +54,7 @@ export default function ShabbosHeader({ shabbos, isShabbosMode }: ShabbosHeaderP
       }}
     >
       {/* Left — TheBoard logotype */}
-      <div style={{ minWidth: '160px' }}>
+      <div className="header-logo" style={{ minWidth: '160px' }}>
         <span style={{
           fontFamily: 'var(--font-headline)',
           fontStyle: 'italic',
@@ -68,7 +67,7 @@ export default function ShabbosHeader({ shabbos, isShabbosMode }: ShabbosHeaderP
       </div>
 
       {/* Center — parsha + times */}
-      <div style={{ textAlign: 'center' }}>
+      <div className="header-center" style={{ textAlign: 'center' }}>
         {parshaDisplay ? (
           <div style={{
             fontFamily: 'var(--font-headline)',
@@ -111,7 +110,7 @@ export default function ShabbosHeader({ shabbos, isShabbosMode }: ShabbosHeaderP
       </div>
 
       {/* Right — live clock */}
-      <div style={{ minWidth: '160px', textAlign: 'right' }}>
+      <div className="header-clock" style={{ minWidth: '160px', textAlign: 'right' }}>
         <span style={{
           fontFamily: 'var(--font-mono)',
           fontSize: '17px',

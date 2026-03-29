@@ -1,11 +1,13 @@
 /**
  * Main page — 2-column grid (news left, red alert sidebar right).
  * Server-renders initial digest data for zero loading flash.
+ * Mobile: single column with horizontal alert strip at top.
  */
 
 import { headers } from 'next/headers';
 import BoardDashboard from '@/components/BoardDashboard';
 import RedAlertSidebar from '@/components/RedAlertSidebar';
+import MobileAlertStrip from '@/components/MobileAlertStrip';
 import type { DigestResponse } from '@/types';
 
 async function getInitialDigest(zip: string): Promise<DigestResponse | null> {
@@ -33,7 +35,13 @@ export default async function Page({ searchParams }: PageProps) {
 
   return (
     <div className="page-grid">
-      <BoardDashboard initialData={initialData} />
+      {/* Left column: mobile alert strip (hidden on desktop) + main board */}
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+        <MobileAlertStrip />
+        <BoardDashboard initialData={initialData} />
+      </div>
+
+      {/* Right column: sidebar (hidden on mobile) */}
       <div className="alert-sidebar">
         <RedAlertSidebar />
       </div>

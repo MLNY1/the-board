@@ -96,15 +96,8 @@ export default function OverviewPanel({ stories }: OverviewPanelProps) {
         <span>{stories.length} update{stories.length !== 1 ? 's' : ''}</span>
       </div>
 
-      {/* 2-column grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '3px 32px',
-        flex: 1,
-        overflow: 'hidden',
-        alignContent: 'start',
-      }}>
+      {/* 2-column desktop / 1-column mobile */}
+      <div className="overview-cols">
         <div>
           {leftCol.map(s => <Row key={s.id} story={s} />)}
         </div>
