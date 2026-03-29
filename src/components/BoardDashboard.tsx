@@ -17,7 +17,8 @@ import ShabbosHeader from './ShabbosHeader';
 import HeroStory from './HeroStory';
 import StoryCard from './StoryCard';
 import OverviewPanel from './OverviewPanel';
-import type { DigestResponse, DigestStoryItem, ShabbosWindowMeta } from '@/types';
+import MarketTicker from './MarketTicker';
+import type { DigestResponse, DigestStoryItem, MarketData, ShabbosWindowMeta } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -58,6 +59,7 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
   const storiesRef    = useRef<DigestStoryItem[]>(initialData?.stories ?? []);
   const seenIdsRef    = useRef<Set<string>>(new Set(initialData?.stories.map(s => s.id) ?? []));
   const zipRef        = useRef('');
+  const marketRef     = useRef(false);
   const failCountRef  = useRef(0);
 
   const rotationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -148,7 +150,8 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
   const fetchDigest = useCallback(async () => {
     try {
       const params = new URLSearchParams();
-      if (zipRef.current) params.set('zip', zipRef.current);
+      if (zipRef.current)   params.set('zip',    zipRef.current);
+      if (marketRef.current) params.set('market', 'true');
 
       const res = await fetch(`/api/digest?${params}`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -205,7 +208,9 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
 
   useEffect(() => {
     mountedRef.current = true;
-    zipRef.current     = new URLSearchParams(window.location.search).get('zip') ?? '';
+    const sp           = new URLSearchParams(window.location.search);
+    zipRef.current     = sp.get('zip')    ?? '';
+    marketRef.current  = sp.get('market') === 'true';
 
     scheduleNext('HERO', 0);
     pollTimer.current = setInterval(fetchDigest, POLL_INTERVAL_MS);
@@ -241,6 +246,7 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
     .slice(0, 20);
 
   const isShabbosMode: boolean = data?.meta.shabbos.is_active ?? false;
+  const marketData: MarketData = data?.meta.market ?? { enabled: false, prices: [], last_updated: '' };
   const shabbosWindowMeta: ShabbosWindowMeta = data?.meta.shabbos ?? {
     is_active: false, window_start: null, window_end: null, parsha: null,
   };
@@ -267,6 +273,9 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
         countdownToShabbos={countdownToShabbos}
         isShabbosMode={isShabbosMode}
       />
+
+      {/* Market ticker — only during weekday Yom Tov (or ?market=true) */}
+      {marketData.enabled && <MarketTicker prices={marketData.prices} />}
 
       {/* Content area — fades on transitions */}
       <div

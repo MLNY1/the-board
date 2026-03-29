@@ -20,6 +20,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import Parser from 'rss-parser';
 import { createServerClient } from '@/lib/supabase';
 import { deduplicateArticles, getCurrentCategory, normalizeSourceUrl } from '@/lib/news-utils';
+import { isWeekdayYomTov } from '@/lib/yomtov-utils';
 import type {
   RawArticle,
   NewsApiResponse,
@@ -374,6 +375,36 @@ export async function GET(req: NextRequest) {
         }
       }
       if (boostedCount > 0) log.push(`Israel boost applied to ${boostedCount} stories`);
+
+      // ── Market news boost (weekday Yom Tov only) ─────────────────────────
+      const defaultZip = process.env.DEFAULT_ZIP ?? '11598';
+      if (await isWeekdayYomTov(defaultZip)) {
+        const marketKeywords = [
+          'fed', 'federal reserve', 'rate cut', 'rate hike', 'interest rate',
+          'inflation', 'cpi', 'pce', 'gdp', 'jobs report', 'payroll', 'unemployment',
+          's&p', 'nasdaq', 'dow jones', 'wall street', 'stock market', 'equities',
+          'treasury', 'yield', 'bond', 'deficit', 'debt ceiling',
+          'earnings', 'ipo', 'merger', 'acquisition',
+          'crude oil', 'opec', 'gold price', 'bitcoin', 'crypto',
+          'dollar', 'euro', 'forex', 'currency', 'exchange rate',
+          'recession', 'stimulus', 'tariff', 'trade war', 'sanctions',
+        ];
+        let marketBoosted = 0;
+        for (const story of stories) {
+          const text = `${story.headline} ${story.summary}`.toLowerCase();
+          if (marketKeywords.some(kw => text.includes(kw))) {
+            story.importance_score = Math.min(100, story.importance_score + 10);
+            if (story.importance_score >= 80)      story.tier = 'breaking';
+            else if (story.importance_score >= 60) story.tier = 'major';
+            else if (story.importance_score >= 40) story.tier = 'notable';
+            else                                   story.tier = 'background';
+            marketBoosted++;
+          }
+        }
+        if (marketBoosted > 0)
+          log.push(`[MarketBoost] Weekday Yom Tov — boosted ${marketBoosted} financial stories`);
+        console.log('[MarketBoost] Weekday yom tov detected — financial news boosted');
+      }
 
       // ── Post-processing dedup ─────────────────────────────────────────────
       // Pass 1: group by topic_slug — keep only the highest-scored per topic.

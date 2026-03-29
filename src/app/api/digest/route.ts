@@ -13,15 +13,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { getActiveWindow, getShabbosWindow } from '@/lib/shabbos-times';
-import type { DigestResponse, DigestStory } from '@/types';
+import { isWeekdayYomTov } from '@/lib/yomtov-utils';
+import { fetchMarketData } from '@/lib/market-data';
+import type { DigestResponse, DigestStory, MarketData } from '@/types';
 
 const DEFAULT_ZIP = process.env.DEFAULT_ZIP ?? '11598';
 const NEXT_REFRESH_SECONDS = 60; // matches the frontend polling interval
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const zip = searchParams.get('zip') ?? DEFAULT_ZIP;
-  const sinceParam = searchParams.get('since');
+  const zip         = searchParams.get('zip')    ?? DEFAULT_ZIP;
+  const sinceParam  = searchParams.get('since');
+  const forceMarket = searchParams.get('market') === 'true';
 
   const supabase = createServerClient();
 
@@ -32,14 +35,16 @@ export async function GET(req: NextRequest) {
     const now = new Date();
     const cutoff48h = new Date(now.getTime() - 48 * 60 * 60 * 1000);
 
-    // Fetch Shabbos/YT state concurrently
-    const [activeWindow, shabbosWindow] = await Promise.allSettled([
+    // Fetch Shabbos/YT state and market mode concurrently
+    const [activeWindow, shabbosWindow, weekdayYomTov] = await Promise.allSettled([
       getActiveWindow(zip),
       getShabbosWindow(zip),
+      isWeekdayYomTov(zip),
     ]);
 
-    const active = activeWindow.status === 'fulfilled' ? activeWindow.value : null;
-    const shabbos = shabbosWindow.status === 'fulfilled' ? shabbosWindow.value : null;
+    const active         = activeWindow.status === 'fulfilled'   ? activeWindow.value   : null;
+    const shabbos        = shabbosWindow.status === 'fulfilled'  ? shabbosWindow.value  : null;
+    const marketActive   = forceMarket || (weekdayYomTov.status === 'fulfilled' && weekdayYomTov.value);
 
     // If Shabbos is active, show stories since Shabbos started (not just 48h).
     // Use whichever cutoff gives MORE stories.
@@ -94,6 +99,12 @@ export async function GET(req: NextRequest) {
     ) as DigestStory[];
 
     // -----------------------------------------------------------------------
+    // Market data (only when weekday yom tov or ?market=true)
+    // -----------------------------------------------------------------------
+    const marketDisabled: MarketData = { enabled: false, prices: [], last_updated: '' };
+    const market: MarketData = marketActive ? await fetchMarketData() : marketDisabled;
+
+    // -----------------------------------------------------------------------
     // Build response
     // -----------------------------------------------------------------------
     const response: DigestResponse = {
@@ -122,6 +133,7 @@ export async function GET(req: NextRequest) {
           parsha: shabbos?.parsha ?? null,
         },
         next_refresh_seconds: NEXT_REFRESH_SECONDS,
+        market,
       },
     };
 

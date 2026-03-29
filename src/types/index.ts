@@ -80,11 +80,28 @@ export interface RedAlertResponse {
   last_checked: string; // ISO timestamp
 }
 
+export interface MarketPrice {
+  symbol:    string;
+  label:     string;
+  price:     number;
+  change:    number;   // percent change from prev close
+  prevClose: number;
+  isUp:      boolean;
+  invert:    boolean;  // true for TLT — price down = yields up
+}
+
+export interface MarketData {
+  enabled:      boolean;
+  prices:       MarketPrice[];
+  last_updated: string;
+}
+
 export interface DigestMeta {
   total_stories: number;
   last_updated: string;
   shabbos: ShabbosWindowMeta;
   next_refresh_seconds: number;
+  market: MarketData;
 }
 
 export interface DigestResponse {
