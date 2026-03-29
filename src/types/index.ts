@@ -57,9 +57,27 @@ export interface DigestStoryItem {
 
 export interface ShabbosWindowMeta {
   is_active: boolean;
+  /** ISO string for candle lighting time (current Shabbos if active, upcoming if weekday) */
   window_start: string | null;
+  /** ISO string for havdalah time */
   window_end: string | null;
   parsha: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Red Alert (Tzeva Adom / Pikud HaOref)
+// ---------------------------------------------------------------------------
+
+export interface RedAlertItem {
+  cities: string[];
+  time: string;   // human-readable local time
+  threat: string; // "missiles", "hostile_aircraft", etc.
+}
+
+export interface RedAlertResponse {
+  active: boolean;
+  alerts: RedAlertItem[];
+  last_checked: string; // ISO timestamp
 }
 
 export interface DigestMeta {

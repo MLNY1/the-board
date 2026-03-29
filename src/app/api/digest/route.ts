@@ -114,8 +114,11 @@ export async function GET(req: NextRequest) {
         last_updated: now.toISOString(),
         shabbos: {
           is_active: active !== null,
-          window_start: active?.start.toISOString() ?? null,
-          window_end: active?.end.toISOString() ?? null,
+          // During Shabbos/YT: active.start = candle lighting, active.end = havdalah.
+          // During weekday: fall back to upcoming Shabbos window from getShabbosWindow().
+          // This ensures the header always has times to display.
+          window_start: (active?.start ?? shabbos?.start)?.toISOString() ?? null,
+          window_end:   (active?.end   ?? shabbos?.end  )?.toISOString() ?? null,
           parsha: shabbos?.parsha ?? null,
         },
         next_refresh_seconds: NEXT_REFRESH_SECONDS,

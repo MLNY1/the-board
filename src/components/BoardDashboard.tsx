@@ -22,6 +22,7 @@ import ShabbosHeader from './ShabbosHeader';
 import HeroStory from './HeroStory';
 import StoryCard from './StoryCard';
 import OverviewPanel from './OverviewPanel';
+import RedAlertBanner from './RedAlertBanner';
 import type { DigestResponse, DigestStoryItem, ShabbosWindowMeta } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -294,6 +295,9 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
       data-shabbos={isShabbosMode ? 'true' : 'false'}
       className="board-root flex flex-col h-screen overflow-hidden"
     >
+      {/* Red alert banner — renders nothing when no active alerts */}
+      <RedAlertBanner />
+
       {/* Header */}
       <ShabbosHeader
         shabbos={shabbosWindowMeta}
