@@ -17,8 +17,19 @@ function formatShabbosTime(iso: string, showDay: boolean): string {
   const d    = new Date(iso);
   const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   if (!showDay) return time;
-  const day = d.toLocaleDateString('en-US', { weekday: 'short' });
+  const day  = d.toLocaleDateString('en-US', { weekday: 'short' });
   return `${day} ${time}`;
+}
+
+const YOM_TOV_PARSHAS = new Set([
+  'pesach', 'passover', 'shavuot', 'shavuos', 'rosh hashana', 'rosh hashanah',
+  'yom kippur', 'sukkot', 'sukkos', 'shemini atzeret', 'shemini atzeres',
+  'simchat torah', 'simchas torah', 'purim', 'chanukah', 'hanukkah',
+]);
+
+function isYomTov(parsha: string | null): boolean {
+  if (!parsha) return false;
+  return YOM_TOV_PARSHAS.has(parsha.toLowerCase());
 }
 
 export default function ShabbosHeader({ shabbos, isShabbosMode }: ShabbosHeaderProps) {
@@ -35,9 +46,12 @@ export default function ShabbosHeader({ shabbos, isShabbosMode }: ShabbosHeaderP
     : null;
 
   const showDay      = !isShabbosMode;
+  const yomTov       = isYomTov(shabbos.parsha);
   const candleTime   = shabbos.window_start ? formatShabbosTime(shabbos.window_start, showDay) : null;
   const havdalahTime = shabbos.window_end   ? formatShabbosTime(shabbos.window_end, showDay)   : null;
   const hasTimes     = candleTime !== null && havdalahTime !== null;
+
+  const sep = <span style={{ margin: '0 6px', color: 'var(--text-dim)' }}>·</span>;
 
   return (
     <header
@@ -66,44 +80,34 @@ export default function ShabbosHeader({ shabbos, isShabbosMode }: ShabbosHeaderP
         </span>
       </div>
 
-      {/* Center — parsha + times */}
+      {/* Center — parsha (if known) + candle/havdalah times */}
       <div className="header-center" style={{ textAlign: 'center' }}>
-        {parshaDisplay ? (
+        {parshaDisplay && (
           <div style={{
             fontFamily: 'var(--font-headline)',
             fontSize: '17px',
             color: 'var(--accent-amber)',
+            marginBottom: hasTimes ? '3px' : 0,
           }}>
             {parshaDisplay}
-          </div>
-        ) : (
-          <div style={{
-            fontFamily: 'var(--font-body)',
-            fontSize: '11px',
-            letterSpacing: '2px',
-            textTransform: 'uppercase',
-            color: 'var(--text-dim)',
-          }}>
-            Live News
           </div>
         )}
 
         {hasTimes && (
           <div style={{
             fontFamily: 'var(--font-body)',
-            fontSize: '12px',
+            fontSize: '13px',
             color: 'var(--text-secondary)',
-            marginTop: '2px',
             whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '20px',
           }}>
-            🕯 {candleTime}
-            <span style={{ margin: '0 6px', color: 'var(--border-card)' }}>·</span>
-            ✨{' '}
-            <span style={isShabbosMode
-              ? { color: 'var(--accent-amber)', fontWeight: 600 }
-              : {}
-            }>
-              {havdalahTime}
+            <span>
+              🕯 Candles{sep}{candleTime}
+            </span>
+            <span style={isShabbosMode ? { color: 'var(--accent-amber)', fontWeight: 600 } : {}}>
+              ✨ {yomTov ? 'Yom Tov Ends' : 'Havdalah'}{sep}{havdalahTime}
             </span>
           </div>
         )}
