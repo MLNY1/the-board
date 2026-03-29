@@ -335,8 +335,6 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
                 display: 'grid',
                 gridTemplateColumns: supportingCards.length === 1 ? '1fr' : '1fr 1fr',
                 gap: '10px',
-                maxHeight: 'clamp(180px, 28vh, 300px)',
-                overflow: 'hidden',
               }}>
                 {supportingCards.map(story => (
                   <StoryCard key={story.id} story={story} isShabbosMode={isShabbosMode} />

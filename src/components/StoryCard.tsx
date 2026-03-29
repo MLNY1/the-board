@@ -61,7 +61,7 @@ export default function StoryCard({ story }: StoryCardProps) {
         </span>
       </div>
 
-      {/* Headline (max 2 lines) */}
+      {/* Headline */}
       <h2 style={{
         fontFamily: 'var(--font-headline)',
         fontSize: '28px',
@@ -69,27 +69,18 @@ export default function StoryCard({ story }: StoryCardProps) {
         lineHeight: 1.2,
         color: 'var(--text-primary)',
         marginBottom: '8px',
-        display: '-webkit-box',
-        WebkitLineClamp: 2,
-        WebkitBoxOrient: 'vertical',
-        overflow: 'hidden',
-        flex: 1,
-      } as React.CSSProperties}>
+      }}>
         {story.headline}
       </h2>
 
-      {/* Summary (max 2 lines) */}
+      {/* Summary */}
       <p style={{
         fontFamily: 'var(--font-body)',
         fontSize: '18px',
         lineHeight: 1.45,
         color: 'var(--text-body)',
         marginBottom: '10px',
-        display: '-webkit-box',
-        WebkitLineClamp: 2,
-        WebkitBoxOrient: 'vertical',
-        overflow: 'hidden',
-      } as React.CSSProperties}>
+      }}>
         {story.summary}
       </p>
 
