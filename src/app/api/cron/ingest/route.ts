@@ -347,8 +347,8 @@ export async function GET(req: NextRequest) {
             .filter(Boolean) as typeof toProcess;
 
           // Collect source names and URLs, dedup
-          const sourceNames = [...new Set(sourceArticles.map((a) => a.source_name).filter(Boolean))];
-          const sourceUrls = [...new Set(sourceArticles.map((a) => a.source_url).filter(Boolean))];
+          const sourceNames = Array.from(new Set(sourceArticles.map((a) => a.source_name).filter(Boolean)));
+          const sourceUrls = Array.from(new Set(sourceArticles.map((a) => a.source_url).filter(Boolean)));
 
           // Use the most recent published_at from contributing articles
           const publishedAt = sourceArticles
