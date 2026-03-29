@@ -17,11 +17,10 @@ const nextConfig = {
     ],
   },
 
-  // Experimental: server actions are stable in Next 14+ but keep for clarity
-  experimental: {},
-
-  // Ensure API routes can run for up to 60s (AI processing may take 20-30s)
-  serverExternalPackages: ['rss-parser'],
+  experimental: {
+    // Ensure rss-parser runs server-side only (Next.js 14 key)
+    serverComponentsExternalPackages: ['rss-parser'],
+  },
 };
 
 export default nextConfig;
