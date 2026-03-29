@@ -179,22 +179,31 @@ body {
 
 .hero-outer-pad      { padding: 24px 28px 16px; }
 .hero-inner-pad      { padding: 28px 32px; }
-.hero-headline       { font-size: 52px; }
-.hero-headline-major { font-size: 36px; }
+.hero-headline       { font-size: 46px; }
+.hero-headline-major { font-size: 34px; }
 .hero-summary        { font-size: 22px; }
 .hero-source-line    { font-size: 18px; }
 
 /* ---------------------------------------------------------------------------
-   Responsive: Cards grid (desktop 4×2, mobile 1-col)
+   Responsive: Cards grid (desktop 2×4, mobile 1-col)
    --------------------------------------------------------------------------- */
 
-.cards-grid      { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.cards-grid      { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .cards-outer-pad { padding: 0 28px; }
-.card-wrapper    { padding: 12px 14px; }
-.card-badge-text { font-size: 8px; padding: 2px 6px; }
-.card-headline   { font-size: 15px; font-weight: 600; line-height: 1.25; color: var(--text-primary); margin-bottom: 6px; }
-.card-summary    { display: none; }
-.card-source     { font-size: 11px; }
+.card-wrapper    { padding: 14px 16px; }
+.card-badge-text { font-size: 9px; padding: 2px 8px; }
+.card-headline   { font-size: 17px; font-weight: 600; line-height: 1.25; color: var(--text-primary); margin-bottom: 5px; }
+.card-summary    {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+  font-family: var(--font-body);
+}
+.card-source     { font-size: 12px; }
 
 /* ---------------------------------------------------------------------------
    Responsive: Notable list
@@ -261,10 +270,7 @@ body {
   .card-wrapper                      { padding: 14px 16px; }
   .card-badge-text                   { font-size: 9px; padding: 2px 8px; }
   .card-headline                     { font-size: 20px; font-weight: 500; }
-  .card-summary                      { display: block; font-size: 14px;
-                                       line-height: 1.4; color: var(--text-body);
-                                       margin-bottom: 8px;
-                                       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-summary                      { font-size: 14px; color: var(--text-body); margin-bottom: 8px; -webkit-line-clamp: 1; }
   .card-source                       { font-size: 13px; }
 
   /* Notable */

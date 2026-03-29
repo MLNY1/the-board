@@ -76,8 +76,8 @@ export default function StoryCard({ story }: StoryCardProps) {
         {story.headline}
       </h2>
 
-      {/* Summary — hidden on desktop, shown on mobile */}
-      <p className="card-summary" style={{ fontFamily: 'var(--font-body)' }}>
+      {/* Summary — 1 line clamp */}
+      <p className="card-summary">
         {story.summary}
       </p>
 
