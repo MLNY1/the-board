@@ -272,15 +272,6 @@ export async function GET(req: NextRequest) {
 
   try {
     // -----------------------------------------------------------------------
-    // TEMPORARY: One-time nuclear cleanup — delete ALL digest_stories and
-    // reset raw_articles so everything re-processes with new dedup logic.
-    // REMOVE AFTER FIRST SUCCESSFUL RUN.
-    // -----------------------------------------------------------------------
-    await supabase.from('digest_stories').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await supabase.from('raw_articles').update({ processed: false }).eq('processed', true);
-    console.log('[CLEANUP] One-time database reset complete');
-
-    // -----------------------------------------------------------------------
     // Step 0: Prune digest_stories older than 48h (stale duplicates accumulate)
     // -----------------------------------------------------------------------
     const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
