@@ -26,9 +26,10 @@ export async function GET(req: NextRequest) {
   const sinceParam  = searchParams.get('since');
   const forceMarket = searchParams.get('market') === 'true';
 
-  const latParam  = searchParams.get('lat');
-  const lngParam  = searchParams.get('lng');
-  const tzidParam = searchParams.get('tzid');
+  const latParam    = searchParams.get('lat');
+  const lngParam    = searchParams.get('lng');
+  const tzidParam   = searchParams.get('tzid');
+  const cityOverride = searchParams.get('city') ?? null; // reverse-geocoded label from browser
   const geo: GeoParams | undefined = (latParam && lngParam)
     ? { lat: parseFloat(latParam), lng: parseFloat(lngParam), tzid: tzidParam ?? 'America/New_York' }
     : undefined;
@@ -138,7 +139,7 @@ export async function GET(req: NextRequest) {
           window_start: (active?.start ?? shabbos?.start)?.toISOString() ?? null,
           window_end:   (active?.end   ?? shabbos?.end  )?.toISOString() ?? null,
           parsha: shabbos?.parsha ?? null,
-          location_label: shabbos?.locationLabel ?? null,
+          location_label: cityOverride ?? shabbos?.locationLabel ?? null,
         },
         next_refresh_seconds: NEXT_REFRESH_SECONDS,
         market,

@@ -98,6 +98,26 @@ Respond ONLY with valid JSON. No other text, no markdown fences, no explanation.
 }`;
 
 // ---------------------------------------------------------------------------
+// Dedup helpers
+// ---------------------------------------------------------------------------
+
+const STOP_WORDS = new Set([
+  'the', 'a', 'an', 'as', 'to', 'in', 'for', 'of', 'and', 'amid', 'after',
+  'over', 'while', 'with', 'by', 'on', 'at', 'from', 'is', 'are', 'was',
+  'were', 'its', 'it', 'but', 'or', 'into', 'about', 'up', 'out', 'be',
+  'not', 'has', 'have', 'will', 'that', 'than', 'says', 'said', 'new',
+]);
+
+function extractKeyWords(headline: string): string[] {
+  return headline
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w))
+    .slice(0, 5);
+}
+
+// ---------------------------------------------------------------------------
 // Auth helper
 // ---------------------------------------------------------------------------
 
@@ -272,16 +292,7 @@ export async function GET(req: NextRequest) {
   const log: string[] = [];
 
   try {
-    // -----------------------------------------------------------------------
-    // Step 0: Prune digest_stories older than 48h (stale duplicates accumulate)
-    // -----------------------------------------------------------------------
-    const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-    const { error: digestPruneError } = await supabase
-      .from('digest_stories')
-      .delete()
-      .lt('created_at', cutoff48h);
-    if (digestPruneError) log.push(`Digest prune error: ${digestPruneError.message}`);
-    else log.push('Pruned digest_stories > 48h');
+    // (digest_stories is cleared right before we insert the new batch)
 
     // -----------------------------------------------------------------------
     // Step 1: Fetch articles from all sources
@@ -417,18 +428,18 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Pass 2: pairwise headline word-overlap check (≥50% = duplicate).
-      const pass2Input  = Array.from(topicMap.values());
-      const finalStories: ClaudeStory[] = [];
+      // Pass 2: pairwise headline Jaccard overlap check (≥50% = duplicate).
+      const pass2Input   = Array.from(topicMap.values());
+      const jaccardKept: ClaudeStory[] = [];
       for (const story of pass2Input) {
         const words = new Set(
           story.headline.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean)
         );
         let isDup  = false;
         let dupIdx = -1;
-        for (let i = 0; i < finalStories.length; i++) {
+        for (let i = 0; i < jaccardKept.length; i++) {
           const keptWords = new Set(
-            finalStories[i].headline.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean)
+            jaccardKept[i].headline.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean)
           );
           const intersection = Array.from(words).filter(w => keptWords.has(w)).length;
           const union        = new Set([...Array.from(words), ...Array.from(keptWords)]).size;
@@ -439,14 +450,29 @@ export async function GET(req: NextRequest) {
           }
         }
         if (!isDup) {
-          finalStories.push(story);
-        } else if (story.importance_score > finalStories[dupIdx].importance_score) {
-          finalStories[dupIdx] = story; // replace with higher-scored version
+          jaccardKept.push(story);
+        } else if (story.importance_score > jaccardKept[dupIdx].importance_score) {
+          jaccardKept[dupIdx] = story;
         }
       }
 
+      // Pass 3: key-word overlap check — sort by score desc, then skip any story
+      // where 3+ of its first 5 meaningful words already appear in a kept story.
+      const pass3Input = jaccardKept.sort((a, b) => b.importance_score - a.importance_score);
+      const finalStories: ClaudeStory[] = [];
+      for (const story of pass3Input) {
+        const keyWords = extractKeyWords(story.headline);
+        let isDup = false;
+        for (const kept of finalStories) {
+          const keptKeyWords = new Set(extractKeyWords(kept.headline));
+          const matches = keyWords.filter(w => keptKeyWords.has(w)).length;
+          if (matches >= 3) { isDup = true; break; }
+        }
+        if (!isDup) finalStories.push(story);
+      }
+
       const removedCount = stories.length - finalStories.length;
-      if (removedCount > 0) log.push(`[Dedup] Removed ${removedCount} duplicate stories`);
+      if (removedCount > 0) log.push(`[Dedup] Removed ${removedCount} duplicate stories (${stories.length} → ${finalStories.length})`);
 
       // Build a lookup: article_id → source info
       const articleLookup = new Map(toProcess.map((a) => [a.id, a]));
@@ -486,6 +512,15 @@ export async function GET(req: NextRequest) {
             published_at: publishedAt,
           };
         });
+
+        // Clear ALL existing digest_stories, then insert only the fresh deduplicated batch.
+        // This ensures no stale duplicates accumulate across runs.
+        const { error: clearError } = await supabase
+          .from('digest_stories')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000'); // delete all rows
+        if (clearError) log.push(`Digest clear error: ${clearError.message}`);
+        else log.push('Cleared digest_stories');
 
         const { error: digestError } = await supabase.from('digest_stories').insert(digestRows);
         if (digestError) {

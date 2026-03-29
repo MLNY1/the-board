@@ -86,43 +86,9 @@ export async function GET() {
     );
   }
 
-  // ── Try live sources and persist any new alerts ───────────────────────────
+  // ── Try Tzevaadom live sources and persist any new alerts ────────────────
 
-  // Source 1: Pikud HaOref AlertsHistory (often geo-blocked from US)
-  try {
-    const res = await fetchWithTimeout(
-      'https://www.oref.org.il/WarningMessages/History/AlertsHistory.json',
-      {
-        headers: {
-          'Referer':          'https://www.oref.org.il/',
-          'X-Requested-With': 'XMLHttpRequest',
-          'Accept':           'application/json',
-          'User-Agent':       'Mozilla/5.0',
-        },
-      }
-    );
-
-    if (res.ok) {
-      const raw = await res.json();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fresh: AlertItem[] = (Array.isArray(raw) ? raw : []).slice(0, HISTORY_LIMIT).map((a: any) => ({
-        cities:    a.data      ?? '',
-        time:      a.time      ?? '',
-        date:      a.date      ?? '',
-        alertDate: a.alertDate ?? '',
-        title:     a.title     ?? '',
-        category:  String(a.cat ?? ''),
-      }));
-      console.log(`[RedAlert] oref.org.il — ${fresh.length} alerts, persisting`);
-      await upsertAlerts(fresh);
-    } else {
-      console.log(`[RedAlert] oref.org.il returned HTTP ${res.status}`);
-    }
-  } catch (err) {
-    console.log(`[RedAlert] oref.org.il failed (${(err as Error).message})`);
-  }
-
-  // Source 2: tzevaadom (live-only, but captures active alerts as they happen)
+  // Source 1: tzevaadom /notifications — currently active alerts
   try {
     const res = await fetchWithTimeout('https://api.tzevaadom.co.il/notifications', {
       headers: { 'Accept': 'application/json', 'Referer': 'https://www.tzevaadom.co.il/' },
@@ -142,19 +108,53 @@ export async function GET() {
           title:     a.threat ?? a.title ?? '',
           category:  '',
         };
-      }).filter((a: AlertItem) => a.alertDate); // only persist if we have a timestamp
+      }).filter((a: AlertItem) => a.alertDate);
 
       if (fresh.length > 0) {
-        console.log(`[RedAlert] tzevaadom — ${fresh.length} live alerts, persisting`);
+        console.log(`[RedAlert] tzevaadom /notifications — ${fresh.length} live alerts, persisting`);
         await upsertAlerts(fresh);
       } else {
-        console.log('[RedAlert] tzevaadom — no active alerts right now');
+        console.log('[RedAlert] tzevaadom /notifications — quiet (no active alerts)');
       }
     } else {
-      console.log(`[RedAlert] tzevaadom returned HTTP ${res.status}`);
+      console.log(`[RedAlert] tzevaadom /notifications returned HTTP ${res.status}`);
     }
   } catch (err) {
-    console.log(`[RedAlert] tzevaadom failed (${(err as Error).message})`);
+    console.log(`[RedAlert] tzevaadom /notifications failed (${(err as Error).message})`);
+  }
+
+  // Source 2: tzevaadom /alerts/history — recent alert history
+  try {
+    const res = await fetchWithTimeout('https://api.tzevaadom.co.il/alerts/history', {
+      headers: { 'Accept': 'application/json', 'Referer': 'https://www.tzevaadom.co.il/' },
+    });
+
+    if (res.ok) {
+      const raw = await res.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fresh: AlertItem[] = (Array.isArray(raw) ? raw : []).slice(0, HISTORY_LIMIT).map((a: any) => {
+        const alertDate = a.alertDate
+          ?? (a.timestamp ? new Date(a.timestamp * 1000).toISOString() : '')
+          ?? (a.time && a.date ? `${a.date}T${a.time}+03:00` : '');
+        return {
+          cities:    Array.isArray(a.cities) ? a.cities.join(' · ') : (a.cities ?? a.data ?? ''),
+          time:      a.time  ?? '',
+          date:      a.date  ?? '',
+          alertDate,
+          title:     a.threat ?? a.title ?? '',
+          category:  '',
+        };
+      }).filter((a: AlertItem) => a.alertDate);
+
+      if (fresh.length > 0) {
+        console.log(`[RedAlert] tzevaadom /alerts/history — ${fresh.length} alerts, persisting`);
+        await upsertAlerts(fresh);
+      }
+    } else {
+      console.log(`[RedAlert] tzevaadom /alerts/history returned HTTP ${res.status} (endpoint may not exist)`);
+    }
+  } catch (err) {
+    console.log(`[RedAlert] tzevaadom /alerts/history failed (${(err as Error).message})`);
   }
 
   // ── Always serve from Supabase history ────────────────────────────────────

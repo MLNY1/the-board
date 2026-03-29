@@ -63,6 +63,7 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
   const latRef        = useRef<number | null>(null);
   const lngRef        = useRef<number | null>(null);
   const tzidRef       = useRef<string>('');
+  const cityLabelRef  = useRef<string>('');
   const failCountRef  = useRef(0);
 
   const rotationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,7 +157,8 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
       if (latRef.current !== null && lngRef.current !== null) {
         params.set('lat',  String(latRef.current));
         params.set('lng',  String(lngRef.current));
-        if (tzidRef.current) params.set('tzid', tzidRef.current);
+        if (tzidRef.current)  params.set('tzid', tzidRef.current);
+        if (cityLabelRef.current) params.set('city', cityLabelRef.current);
       } else if (zipRef.current) {
         params.set('zip', zipRef.current);
       }
@@ -222,16 +224,18 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
     marketRef.current  = sp.get('market') === 'true';
 
     // Geolocation: check localStorage first, then request from browser
-    const storedLat  = localStorage.getItem('theboard_lat');
-    const storedLng  = localStorage.getItem('theboard_lng');
-    const storedTzid = localStorage.getItem('theboard_tzid');
+    const storedLat   = localStorage.getItem('theboard_lat');
+    const storedLng   = localStorage.getItem('theboard_lng');
+    const storedTzid  = localStorage.getItem('theboard_tzid');
+    const storedCity  = localStorage.getItem('theboard_city');
     if (storedLat && storedLng) {
-      latRef.current  = parseFloat(storedLat);
-      lngRef.current  = parseFloat(storedLng);
-      tzidRef.current = storedTzid ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+      latRef.current       = parseFloat(storedLat);
+      lngRef.current       = parseFloat(storedLng);
+      tzidRef.current      = storedTzid ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+      cityLabelRef.current = storedCity ?? '';
     } else if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
+        async (pos) => {
           if (!mountedRef.current) return;
           const lat  = pos.coords.latitude;
           const lng  = pos.coords.longitude;
@@ -242,8 +246,25 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
           localStorage.setItem('theboard_lat',  String(lat));
           localStorage.setItem('theboard_lng',  String(lng));
           localStorage.setItem('theboard_tzid', tzid);
-          // Immediately refresh with the detected location
-          fetchDigest();
+
+          // Reverse geocode to get a human-readable city name
+          try {
+            const geoRes = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+              { headers: { 'User-Agent': 'TheBoard/1.0 (news dashboard)' } }
+            );
+            if (geoRes.ok) {
+              const geoData = await geoRes.json();
+              const addr    = geoData.address ?? {};
+              const city    = addr.city ?? addr.town ?? addr.village ?? addr.hamlet ?? '';
+              const state   = addr.state_code ?? addr.state ?? '';
+              const label   = city ? (state ? `${city}, ${state}` : city) : '';
+              cityLabelRef.current = label;
+              if (label) localStorage.setItem('theboard_city', label);
+            }
+          } catch { /* reverse geocode failed — city label will be empty */ }
+
+          if (mountedRef.current) fetchDigest();
         },
         () => { /* denied or unavailable — silently use default zip */ },
         { timeout: 5000 }

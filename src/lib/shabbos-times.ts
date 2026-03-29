@@ -134,13 +134,16 @@ export async function getShabbosWindow(zip: string, geo?: GeoParams): Promise<Sh
     throw new Error('Could not find candle lighting or havdalah in Hebcal response');
   }
 
-  // Build location label from Hebcal response
+  // Build location label from Hebcal response.
+  // For geo queries, Hebcal sometimes returns coordinates as the title (e.g. "40°37'N 73°43'W").
+  // Detect and discard those — the client will supply a city name instead.
   const loc = data.location;
   let locationLabel = '';
   if (loc) {
-    if (loc.title && !loc.zip) {
-      // Geo queries return a "title" like "Brooklyn, NY" or just a city name
-      locationLabel = loc.title;
+    const title = loc.title ?? '';
+    const looksLikeCoords = /\d+[°º']/.test(title) || /^\d+\.\d+/.test(title);
+    if (title && !looksLikeCoords) {
+      locationLabel = title;
     } else if (loc.city) {
       locationLabel = loc.state ? `${loc.city}, ${loc.state}` : loc.city;
     }
