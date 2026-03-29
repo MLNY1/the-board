@@ -1,20 +1,32 @@
 /**
- * Root layout for TheBoard.
- *
- * - Sets up full-viewport, overflow-hidden layout for kiosk mode
- * - Wraps content in ErrorBoundary to catch crashes without blank screens
- * - Meta http-equiv refresh every 3600s as a safety net for JS crashes
- * - Minimal meta tags (this is a private wall display, not a public web page)
+ * Root layout — loads fonts via next/font/google (zero FOUC, self-hosted by Vercel)
+ * and wraps the app in the crash-safe ErrorBoundary.
  */
 
 import type { Metadata, Viewport } from 'next';
+import { Newsreader, Inter } from 'next/font/google';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import './globals.css';
+
+const newsreader = Newsreader({
+  subsets: ['latin'],
+  weight: ['400', '600', '700'],
+  style: ['normal', 'italic'],
+  variable: '--font-newsreader',
+  display: 'swap',
+});
+
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-inter',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'TheBoard',
   description: 'Automated news dashboard',
-  robots: 'noindex, nofollow', // Private display — don't index
+  robots: 'noindex, nofollow',
 };
 
 export const viewport: Viewport = {
@@ -23,22 +35,14 @@ export const viewport: Viewport = {
   themeColor: '#0a0a0f',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Safety net: force full page reload every hour in case JS crashes unrecoverably */}
+        {/* Safety net: full reload every hour in case JS crashes unrecoverably */}
         <meta httpEquiv="refresh" content="3600" />
-
-        {/* Preconnect to Google Fonts for faster font loading */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
-      <body className="h-screen overflow-hidden bg-[#0a0a0f]">
+      <body className={`${newsreader.variable} ${inter.variable} h-screen overflow-hidden`}>
         <ErrorBoundary>
           {children}
         </ErrorBoundary>

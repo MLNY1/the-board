@@ -1,117 +1,134 @@
 'use client';
 
-/**
- * Top header bar for TheBoard.
- *
- * Weekday mode: "TheBoard" logo | Parsha name + countdown to Shabbos | Live clock
- * Shabbos mode: "TheBoard" logo | "Shabbat [Parsha]" + window times | Live clock
- *
- * The clock updates every second via setInterval. All intervals are cleaned up on unmount.
- */
-
 import { useEffect, useRef, useState } from 'react';
 import type { ShabbosWindowMeta } from '@/types';
 
 interface ShabbosHeaderProps {
   shabbos: ShabbosWindowMeta;
-  /** Countdown string like "6h 42m" — provided by parent so it doesn't re-fetch */
   countdownToShabbos: string | null;
   isShabbosMode: boolean;
 }
 
-function formatTime(date: Date): string {
+function formatClock(date: Date): string {
   return date.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
+    second: '2-digit',
     hour12: true,
-    timeZoneName: 'short',
   });
 }
 
 function formatWindowTime(iso: string | null): string {
   if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return new Date(iso).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
 }
 
-export default function ShabbosHeader({
-  shabbos,
-  countdownToShabbos,
-  isShabbosMode,
-}: ShabbosHeaderProps) {
-  const [currentTime, setCurrentTime] = useState<string>(() => formatTime(new Date()));
+export default function ShabbosHeader({ shabbos, countdownToShabbos, isShabbosMode }: ShabbosHeaderProps) {
+  const [clock, setClock] = useState(() => formatClock(new Date()));
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      setCurrentTime(formatTime(new Date()));
-    }, 1000);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+    intervalRef.current = setInterval(() => setClock(formatClock(new Date())), 1000);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, []);
 
-  const parshaDisplay = shabbos.parsha ? `Shabbat ${shabbos.parsha}` : 'Shabbat';
+  const parshaDisplay = shabbos.parsha
+    ? (isShabbosMode ? `Shabbat ${shabbos.parsha}` : shabbos.parsha)
+    : null;
 
   return (
     <header
-      className={`
-        flex items-center justify-between px-8 py-4 border-b
-        ${isShabbosMode
-          ? 'bg-[#0d0a07] border-[#2a2015] text-[#d4cfc8]'
-          : 'bg-[#0a0a0f] border-[#1e1e24] text-[#e8e4de]'
-        }
-      `}
+      className="relative flex items-center justify-between border-b shrink-0"
+      style={{
+        backgroundColor: 'var(--bg-primary)',
+        borderBottomColor: 'var(--border-subtle)',
+        height: '68px',
+        paddingLeft: '2.5rem',
+        paddingRight: '2.5rem',
+      }}
     >
-      {/* Logo */}
-      <div className="flex items-center gap-3 min-w-[180px]">
+      {/* Shabbos warm glow overlay — only visible during Shabbos */}
+      {isShabbosMode && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: 'linear-gradient(90deg, rgba(196,146,46,0.07) 0%, transparent 40%, transparent 60%, rgba(196,146,46,0.05) 100%)',
+          }}
+        />
+      )}
+
+      {/* ── Left: TheBoard logotype ── */}
+      <div className="flex items-center min-w-[200px]">
         <span
-          className={`
-            text-2xl font-bold tracking-tight font-serif
-            ${isShabbosMode ? 'text-[#c4922e]' : 'text-[#d4a24e]'}
-          `}
+          className="font-serif italic tracking-tight select-none"
+          style={{
+            fontSize: 'clamp(1.25rem, 1.5vw, 1.5rem)',
+            color: 'var(--accent-breaking)',
+            letterSpacing: '-0.01em',
+          }}
         >
           TheBoard
         </span>
       </div>
 
-      {/* Center: Parsha + Shabbos info */}
-      <div className="flex flex-col items-center gap-0.5">
-        {shabbos.parsha && (
+      {/* ── Center: Parsha / Shabbos info ── */}
+      <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5">
+        {parshaDisplay && (
           <span
-            className={`
-              text-xl font-semibold tracking-wide
-              ${isShabbosMode ? 'text-[#d4cfc8]' : 'text-[#e8e4de]'}
-            `}
+            className="font-serif font-semibold tracking-wide"
+            style={{
+              fontSize: 'clamp(1rem, 1.25vw, 1.25rem)',
+              color: 'var(--accent-breaking)',
+            }}
           >
             {parshaDisplay}
           </span>
         )}
 
         {isShabbosMode && shabbos.window_start && shabbos.window_end ? (
-          <span className="text-sm text-[#8a8680]">
-            {formatWindowTime(shabbos.window_start)} – {formatWindowTime(shabbos.window_end)}
+          <span
+            className="font-sans tracking-wide"
+            style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}
+          >
+            {formatWindowTime(shabbos.window_start)}
+            <span style={{ color: 'var(--text-dim)', margin: '0 6px' }}>–</span>
+            {formatWindowTime(shabbos.window_end)}
           </span>
         ) : countdownToShabbos ? (
-          <span className="text-sm text-[#8a8680]">
+          <span
+            className="font-sans"
+            style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}
+          >
             Shabbat in{' '}
-            <span className={isShabbosMode ? 'text-[#c4922e]' : 'text-[#d4a24e]'}>
+            <span style={{ color: 'var(--accent-breaking)', fontWeight: 600 }}>
               {countdownToShabbos}
             </span>
+          </span>
+        ) : !parshaDisplay ? (
+          <span
+            className="font-sans tracking-widest uppercase"
+            style={{ fontSize: '0.75rem', color: 'var(--text-dim)', letterSpacing: '0.12em' }}
+          >
+            Live News
           </span>
         ) : null}
       </div>
 
-      {/* Right: Live clock */}
-      <div className="min-w-[180px] flex justify-end">
+      {/* ── Right: Live clock ── */}
+      <div className="min-w-[200px] flex justify-end">
         <span
-          className={`
-            text-xl font-mono tabular-nums
-            ${isShabbosMode ? 'text-[#d4cfc8]' : 'text-[#e8e4de]'}
-          `}
+          className="font-mono tabular-nums"
+          style={{
+            fontSize: 'clamp(1rem, 1.2vw, 1.125rem)',
+            color: 'var(--text-primary)',
+            letterSpacing: '0.02em',
+          }}
         >
-          {currentTime}
+          {clock}
         </span>
       </div>
     </header>

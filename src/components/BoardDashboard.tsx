@@ -282,14 +282,18 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
     parsha: null,
   };
 
-  const bgPrimary    = isShabbosMode ? 'bg-[#0d0a07]' : 'bg-[#0a0a0f]';
-  const borderSubtle = isShabbosMode ? 'border-[#2a2015]' : 'border-[#1e1e24]';
-  const textMuted    = isShabbosMode ? 'text-[#8a8070]' : 'text-[#8a8680]';
+  const lastUpdated = data?.meta.last_updated
+    ? new Date(data.meta.last_updated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : null;
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className={`flex flex-col h-screen ${bgPrimary} overflow-hidden`}>
+    // data-shabbos activates the Shabbos CSS custom property overrides in globals.css
+    <div
+      data-shabbos={isShabbosMode ? 'true' : 'false'}
+      className="board-root flex flex-col h-screen overflow-hidden"
+    >
       {/* Header */}
       <ShabbosHeader
         shabbos={shabbosWindowMeta}
@@ -297,7 +301,7 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
         isShabbosMode={isShabbosMode}
       />
 
-      {/* Main content — opacity controlled by isVisible for smooth fades */}
+      {/* Main content — opacity fades on rotation transitions */}
       <main
         className="flex-1 flex flex-col min-h-0"
         style={{
@@ -308,8 +312,13 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
         {stories.length === 0 ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
-              <p className={`text-2xl font-serif ${textMuted}`}>Gathering stories…</p>
-              <p className={`text-base mt-2 ${textMuted}`}>
+              <p
+                className="font-serif mb-2"
+                style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)', color: 'var(--text-secondary)' }}
+              >
+                Gathering stories…
+              </p>
+              <p className="font-sans" style={{ fontSize: '1rem', color: 'var(--text-dim)' }}>
                 First update arrives within 20 minutes.
               </p>
             </div>
@@ -320,7 +329,13 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
 
         ) : (
           /* HERO phase */
-          <div className="flex-1 flex flex-col gap-4 p-6 min-h-0">
+          <div
+            className="flex-1 flex flex-col min-h-0"
+            style={{
+              padding: 'clamp(1rem, 2vh, 1.5rem) clamp(1.5rem, 3vw, 2.5rem)',
+              gap: 'clamp(0.75rem, 1.5vh, 1rem)',
+            }}
+          >
             {currentHero ? (
               <HeroStory
                 story={currentHero}
@@ -328,41 +343,78 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
                 isShabbosMode={isShabbosMode}
               />
             ) : (
-              /* Shouldn't happen with displayHeroes fallback, but be safe */
               <div className="flex-1 flex items-center justify-center">
-                <p className={`text-xl font-serif ${textMuted}`}>Loading stories…</p>
+                <p className="font-serif" style={{ fontSize: '1.25rem', color: 'var(--text-dim)' }}>
+                  Loading stories…
+                </p>
               </div>
             )}
 
             {supportingCards.length > 0 && (
-              <div className="grid grid-cols-2 gap-4 h-52 shrink-0">
+              <div
+                className="grid grid-cols-2 shrink-0"
+                style={{
+                  gap: 'clamp(0.75rem, 1.5vw, 1rem)',
+                  height: 'clamp(170px, 19vh, 220px)',
+                }}
+              >
                 {supportingCards.slice(0, 2).map(story => (
                   <StoryCard key={story.id} story={story} isShabbosMode={isShabbosMode} />
                 ))}
-                {/* Fill second slot if only one card */}
-                {supportingCards.length === 1 && <div className={`rounded-lg border ${borderSubtle}`} />}
+                {supportingCards.length === 1 && (
+                  <div
+                    className="rounded-lg"
+                    style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-card)' }}
+                  />
+                )}
               </div>
             )}
           </div>
         )}
       </main>
 
-      {/* Footer status bar */}
-      <footer className={`flex items-center justify-between px-8 py-2 border-t text-sm ${borderSubtle} ${textMuted}`}>
+      {/* ── Footer status bar ── */}
+      <footer
+        className="shrink-0 flex items-center justify-center font-sans"
+        style={{
+          height: '40px',
+          borderTop: '1px solid var(--border-subtle)',
+          gap: '1.5rem',
+          fontSize: '0.8125rem',
+          color: 'var(--text-dim)',
+          backgroundColor: 'var(--bg-primary)',
+        }}
+      >
         <span>
-          {stories.length} stor{stories.length !== 1 ? 'ies' : 'y'} ·{' '}
-          Updated{' '}
-          {data?.meta.last_updated
-            ? new Date(data.meta.last_updated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-            : '—'}
+          {stories.length} stor{stories.length !== 1 ? 'ies' : 'y'}
         </span>
 
-        <span className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full inline-block ${isOffline ? 'bg-amber-500' : 'bg-green-600'}`} />
-          <span>{isOffline ? 'Offline — showing last update' : 'Live'}</span>
+        <span style={{ color: 'var(--border-subtle)' }}>·</span>
+
+        {lastUpdated && (
+          <>
+            <span>Updated {lastUpdated}</span>
+            <span style={{ color: 'var(--border-subtle)' }}>·</span>
+          </>
+        )}
+
+        <span className="flex items-center gap-1.5">
+          {isOffline ? (
+            <>
+              <span className="offline-dot" />
+              <span style={{ color: 'var(--accent-breaking)' }}>Offline</span>
+            </>
+          ) : (
+            <>
+              <span className="live-dot" />
+              <span style={{ color: 'var(--text-secondary)' }}>Live</span>
+            </>
+          )}
         </span>
 
-        <span>Next refresh in {data?.meta.next_refresh_seconds ?? 60}s</span>
+        <span style={{ color: 'var(--border-subtle)' }}>·</span>
+
+        <span>Next refresh {data?.meta.next_refresh_seconds ?? 60}s</span>
       </footer>
     </div>
   );

@@ -1,44 +1,68 @@
-/* TheBoard — Global Styles */
-
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;0,6..72,700;1,6..72,400&family=Inter:wght@400;500;600;700&display=swap');
+/* TheBoard — Global Design System */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------------
-   CSS Custom Properties
-   Design tokens for both weekday and Shabbos modes.
-   Components read these via Tailwind utility classes (hardcoded hex values
-   in component JSX mirror these tokens for Tailwind JIT compatibility).
+   Color tokens — applied via data-shabbos attribute on the root wrapper.
+   Weekday = default dark (Bloomberg terminal).
+   Shabbos = warmer, dimmer (candlelight warmth).
    --------------------------------------------------------------------------- */
 
 :root {
-  /* Weekday (default) — Bloomberg terminal dark */
-  --bg-primary: #0a0a0f;
-  --bg-card: #141419;
-  --text-primary: #e8e4de;
-  --text-secondary: #8a8680;
-  --accent-breaking: #d4a24e;
-  --accent-major: #6b8cae;
-  --accent-notable: #5a5a5a;
-  --border-subtle: #1e1e24;
+  /* Backgrounds */
+  --bg-primary:      #0a0a0f;
+  --bg-secondary:    #0e0e15;
+  --bg-card:         #141419;
+  --bg-card-raised:  #18181f;
 
-  /* Font stacks */
-  --font-serif: 'Newsreader', 'Georgia', 'Times New Roman', serif;
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+  /* Text */
+  --text-primary:    #e8e4de;
+  --text-secondary:  #8a8680;
+  --text-dim:        #4a4a52;
+
+  /* Accents */
+  --accent-breaking:     #d4a24e;
+  --accent-breaking-glow: rgba(212, 162, 78, 0.12);
+  --accent-major:        #6b8cae;
+  --accent-major-glow:   rgba(107, 140, 174, 0.10);
+  --accent-notable:      #52525a;
+
+  /* Borders */
+  --border-subtle:  #1e1e26;
+  --border-card:    #22222c;
+
+  /* Page vignette — very subtle radial from top */
+  --vignette-color: rgba(212, 162, 78, 0.04);
+
+  /* Font stacks (populated by next/font CSS variables) */
+  --font-serif: var(--font-newsreader), Georgia, 'Times New Roman', serif;
+  --font-sans:  var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono:  ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
 }
 
-/* Shabbos mode — warmer, dimmer palette */
+/* Shabbos mode — warmer, dimmer, candlelight palette */
 [data-shabbos='true'] {
-  --bg-primary: #0d0a07;
-  --bg-card: #130e09;
-  --text-primary: #d4cfc8;
-  --text-secondary: #8a8070;
-  --accent-breaking: #c4922e;
-  --accent-major: #5a7a9a;
-  --border-subtle: #2a2015;
+  --bg-primary:      #0d0a07;
+  --bg-secondary:    #110d09;
+  --bg-card:         #130e09;
+  --bg-card-raised:  #181008;
+
+  --text-primary:    #d4cfc8;
+  --text-secondary:  #8a8070;
+  --text-dim:        #48423a;
+
+  --accent-breaking:     #c4922e;
+  --accent-breaking-glow: rgba(196, 146, 46, 0.14);
+  --accent-major:        #5a7a9a;
+  --accent-major-glow:   rgba(90, 122, 154, 0.10);
+  --accent-notable:      #4a4238;
+
+  --border-subtle:  #2a2015;
+  --border-card:    #2e2218;
+
+  --vignette-color: rgba(196, 146, 46, 0.06);
 }
 
 /* ---------------------------------------------------------------------------
@@ -56,119 +80,184 @@
 html,
 body {
   height: 100%;
-  overflow: hidden; /* Prevent any accidental scroll — this is a kiosk display */
+  overflow: hidden;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-sans);
-
-  /* Improve font rendering on TV/monitor displays */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-}
-
-/* Prevent text selection — kiosk UI */
-body {
+  font-feature-settings: 'kern' 1, 'liga' 1;
   user-select: none;
   cursor: default;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* ---------------------------------------------------------------------------
-   Typography utilities
+   Page-level background — subtle radial vignette from top center.
+   Gives the screen visual depth so it doesn't look like a dead monitor.
    --------------------------------------------------------------------------- */
 
-.font-serif {
-  font-family: var(--font-serif);
+.board-root {
+  position: relative;
+  background-color: var(--bg-primary);
 }
 
-.font-sans {
-  font-family: var(--font-sans);
+.board-root::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 40% at 50% 0%, var(--vignette-color) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
 }
 
-.font-mono {
-  font-family: var(--font-mono);
+.board-root > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* ---------------------------------------------------------------------------
-   Scrollbar — hidden but functional (overview panel may have long lists)
+   Keyframe animations
    --------------------------------------------------------------------------- */
 
-::-webkit-scrollbar {
-  width: 4px;
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1;   transform: scale(1);   }
+  50%       { opacity: 0.3; transform: scale(0.75); }
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: var(--border-subtle);
-  border-radius: 2px;
-}
-
-/* ---------------------------------------------------------------------------
-   Line clamp utilities (supplements Tailwind's built-in line-clamp)
-   --------------------------------------------------------------------------- */
-
-.line-clamp-1 {
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.line-clamp-3 {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-/* ---------------------------------------------------------------------------
-   Fade animation keyframes (used by BoardDashboard via inline style transitions)
-   --------------------------------------------------------------------------- */
-
-@keyframes fadeIn {
+@keyframes fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0);    }
 }
 
-.animate-fade-in {
-  animation: fadeIn 0.7s ease-in-out forwards;
-}
-
-.animate-slide-up {
-  animation: slideUp 0.5s ease-out forwards;
+@keyframes new-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
 }
 
 /* ---------------------------------------------------------------------------
-   Kiosk-mode: prevent browser chrome interference
+   Typography helpers
    --------------------------------------------------------------------------- */
 
-/* Prevent tap highlight on touch screens */
-* {
-  -webkit-tap-highlight-color: transparent;
+.font-serif { font-family: var(--font-serif); }
+.font-sans  { font-family: var(--font-sans);  }
+.font-mono  { font-family: var(--font-mono);  }
+
+/* Editorial number treatment — tabular figures in headlines */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------------------
+   Line-clamp utilities
+   --------------------------------------------------------------------------- */
+
+.line-clamp-1,
+.line-clamp-2,
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.line-clamp-1 { -webkit-line-clamp: 1; }
+.line-clamp-2 { -webkit-line-clamp: 2; }
+.line-clamp-3 { -webkit-line-clamp: 3; }
+
+/* ---------------------------------------------------------------------------
+   Component: Hero story left-border accent
+   Uses pseudo-element for a gradient border effect (Tailwind can't do this).
+   Apply .hero-accent-breaking or .hero-accent-major to the hero card div.
+   --------------------------------------------------------------------------- */
+
+.hero-card {
+  position: relative;
+  padding-left: 2.5rem; /* 40px — extra left padding to clear the border */
 }
 
-/* Prevent pull-to-refresh on touch screens */
-body {
-  overscroll-behavior: none;
+.hero-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  border-radius: 5px 0 0 5px;
 }
+
+.hero-card-breaking::before {
+  background: linear-gradient(
+    to bottom,
+    var(--accent-breaking) 0%,
+    rgba(212, 162, 78, 0.3) 100%
+  );
+}
+
+.hero-card-major::before {
+  background: linear-gradient(
+    to bottom,
+    var(--accent-major) 0%,
+    rgba(107, 140, 174, 0.25) 100%
+  );
+}
+
+/* Shabbos overrides for the gradient borders */
+[data-shabbos='true'] .hero-card-breaking::before {
+  background: linear-gradient(
+    to bottom,
+    var(--accent-breaking) 0%,
+    rgba(196, 146, 46, 0.25) 100%
+  );
+}
+
+[data-shabbos='true'] .hero-card-major::before {
+  background: linear-gradient(
+    to bottom,
+    var(--accent-major) 0%,
+    rgba(90, 122, 154, 0.2) 100%
+  );
+}
+
+/* ---------------------------------------------------------------------------
+   Component: Live indicator dot
+   --------------------------------------------------------------------------- */
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #4ade80; /* green-400 */
+  animation: pulse-dot 2.5s ease-in-out infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.offline-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #d4a24e;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Component: NEW badge pulse
+   --------------------------------------------------------------------------- */
+
+.new-badge {
+  animation: new-badge-pulse 1.8s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------------
+   Scrollbar (hidden but functional for potential overflow)
+   --------------------------------------------------------------------------- */
+
+::-webkit-scrollbar       { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 2px; }

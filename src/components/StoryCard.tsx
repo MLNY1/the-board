@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Compact story card for major/notable tier stories shown in the two-up grid
- * beneath the hero story. Displays a truncated headline and minimal metadata.
+ * Compact secondary story card — shown in the two-up grid below the hero.
+ * Designed to be readable from across a room at ~28-32px headline.
  */
 
 import type { DigestStoryItem } from '@/types';
@@ -12,85 +12,98 @@ interface StoryCardProps {
   isShabbosMode: boolean;
 }
 
-function formatRelativeTime(isoString: string): string {
-  const date = new Date(isoString);
-  const diffMs = Date.now() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-
-  if (diffMin < 1) return 'Just now';
+function formatRelativeTime(iso: string): string {
+  const diffMin = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (diffMin < 1)  return 'Just now';
   if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const h = Math.floor(diffMin / 60);
+  if (h < 24) return `${h}h ago`;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function StoryCard({ story, isShabbosMode }: StoryCardProps) {
-  const isMajor = story.tier === 'major';
+export default function StoryCard({ story }: StoryCardProps) {
+  const isBreaking = story.tier === 'breaking';
+  const isMajor    = story.tier === 'major';
+  const hasAccent  = isBreaking || isMajor;
 
-  const badgeColor = isShabbosMode
-    ? (isMajor ? 'text-[#7aaccb] border-[#5a7a9a]' : 'text-[#8a8680] border-[#3a3a3a]')
-    : (isMajor ? 'text-[#8eadcb] border-[#6b8cae]' : 'text-[#8a8680] border-[#5a5a5a]');
+  const accentVar = isBreaking
+    ? 'var(--accent-breaking)'
+    : isMajor
+    ? 'var(--accent-major)'
+    : 'var(--accent-notable)';
 
-  const bgCard = isShabbosMode ? 'bg-[#130e09] border-[#2a2015]' : 'bg-[#141419] border-[#1e1e24]';
+  const badgeBg = isBreaking
+    ? 'var(--accent-breaking-glow)'
+    : isMajor
+    ? 'var(--accent-major-glow)'
+    : 'rgba(82,82,90,0.15)';
 
   return (
     <div
-      className={`
-        flex flex-col justify-between p-6 rounded-lg border
-        ${bgCard}
-        h-full
-      `}
+      className="flex flex-col justify-between h-full rounded-lg overflow-hidden"
+      style={{
+        backgroundColor: 'var(--bg-card)',
+        border: '1px solid var(--border-card)',
+        padding: 'clamp(1rem, 1.5vw, 1.5rem)',
+      }}
     >
-      {/* Tier badge */}
+      {/* ── Tier badge ── */}
       <div className="mb-3">
         <span
-          className={`
-            text-xs font-bold tracking-widest uppercase border rounded-sm px-2 py-0.5
-            ${badgeColor}
-          `}
+          className="font-sans font-bold uppercase"
+          style={{
+            fontSize: '0.625rem',
+            letterSpacing: '0.14em',
+            color: hasAccent ? accentVar : 'var(--text-dim)',
+            backgroundColor: badgeBg,
+            padding: '3px 8px',
+            borderRadius: '2px',
+          }}
         >
           {story.tier}
         </span>
       </div>
 
-      {/* Headline — clamp to 3 lines to keep cards uniform */}
+      {/* ── Headline ── */}
       <h2
-        className={`
-          font-serif font-bold leading-snug mb-4
-          text-2xl xl:text-3xl
-          line-clamp-3
-          ${isShabbosMode ? 'text-[#d4cfc8]' : 'text-[#e8e4de]'}
-        `}
+        className="font-serif font-bold line-clamp-3 flex-1"
+        style={{
+          fontSize: 'clamp(1.25rem, 1.75vw, 1.75rem)', /* 20px → 28px */
+          color: 'var(--text-primary)',
+          lineHeight: 1.25,
+          marginBottom: '0.625rem',
+        }}
       >
         {story.headline}
       </h2>
 
-      {/* Summary — clamp to 2 lines */}
+      {/* ── Summary ── */}
       <p
-        className={`
-          text-base leading-relaxed line-clamp-2 mb-4 flex-1
-          ${isShabbosMode ? 'text-[#a09b94]' : 'text-[#a8a39c]'}
-        `}
+        className="font-sans line-clamp-2"
+        style={{
+          fontSize: 'clamp(0.875rem, 1vw, 1rem)',
+          color: 'var(--text-secondary)',
+          lineHeight: 1.5,
+          marginBottom: '0.875rem',
+        }}
       >
         {story.summary}
       </p>
 
-      {/* Metadata */}
-      <div className="flex items-center gap-3">
-        {story.sources.length > 0 && (
-          <span
-            className={`
-              text-sm font-sans truncate
-              ${isMajor
-                ? (isShabbosMode ? 'text-[#7aaccb]' : 'text-[#8eadcb]')
-                : 'text-[#8a8680]'
-              }
-            `}
-          >
-            {story.sources[0]}
-          </span>
-        )}
-        <span className="text-sm text-[#8a8680] font-sans ml-auto shrink-0">
+      {/* ── Metadata ── */}
+      <div className="flex items-center justify-between font-sans">
+        <span
+          className="truncate"
+          style={{
+            fontSize: '0.8125rem',
+            color: hasAccent ? accentVar : 'var(--text-secondary)',
+            fontWeight: hasAccent ? 500 : 400,
+            maxWidth: '65%',
+          }}
+        >
+          {story.sources[0] ?? ''}
+        </span>
+        <span style={{ fontSize: '0.8125rem', color: 'var(--text-dim)' }}>
           {formatRelativeTime(story.published_at)}
         </span>
       </div>

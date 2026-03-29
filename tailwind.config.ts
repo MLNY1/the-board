@@ -9,47 +9,34 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        serif: ['Newsreader', 'Georgia', 'Times New Roman', 'serif'],
-        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif'],
-        mono: ['ui-monospace', 'SF Mono', 'Cascadia Code', 'monospace'],
-      },
-      colors: {
-        board: {
-          // Weekday palette
-          'bg-primary': '#0a0a0f',
-          'bg-card': '#141419',
-          'text-primary': '#e8e4de',
-          'text-secondary': '#8a8680',
-          'accent-breaking': '#d4a24e',
-          'accent-major': '#6b8cae',
-          'accent-notable': '#5a5a5a',
-          'border-subtle': '#1e1e24',
-          // Shabbos palette
-          'shabbos-bg': '#0d0a07',
-          'shabbos-card': '#130e09',
-          'shabbos-text': '#d4cfc8',
-          'shabbos-muted': '#8a8070',
-          'shabbos-breaking': '#c4922e',
-          'shabbos-major': '#5a7a9a',
-          'shabbos-border': '#2a2015',
-        },
-      },
-      fontSize: {
-        // Kiosk-optimized type scale for 1080p displays
-        'hero-breaking': ['3.5rem', { lineHeight: '1.1', fontWeight: '700' }], // 56px
-        'hero-major': ['2.75rem', { lineHeight: '1.15', fontWeight: '700' }],  // 44px
-        'card-headline': ['1.875rem', { lineHeight: '1.2', fontWeight: '700' }], // 30px
-        'summary': ['1.375rem', { lineHeight: '1.6' }],                         // 22px
-        'metadata': ['1rem', { lineHeight: '1.5' }],                            // 16px
+        // References CSS variables set by next/font/google in layout.tsx
+        serif: ['var(--font-newsreader)', 'Georgia', 'Times New Roman', 'serif'],
+        sans:  ['var(--font-inter)', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif'],
+        mono:  ['ui-monospace', 'SF Mono', 'Cascadia Code', 'Consolas', 'monospace'],
       },
       animation: {
-        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'pulse-dot':  'pulse-dot 2.5s ease-in-out infinite',
+        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'fade-in':    'fade-in 0.7s ease-out forwards',
+        'slide-up':   'slide-up 0.5s ease-out forwards',
+      },
+      keyframes: {
+        'pulse-dot': {
+          '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+          '50%':      { opacity: '0.4', transform: 'scale(0.8)' },
+        },
+        'fade-in': {
+          from: { opacity: '0' },
+          to:   { opacity: '1' },
+        },
+        'slide-up': {
+          from: { opacity: '0', transform: 'translateY(12px)' },
+          to:   { opacity: '1', transform: 'translateY(0)' },
+        },
       },
       screens: {
-        // 1080p target
         'fhd': '1920px',
-        // 4K target
-        '4k': '3840px',
+        '4k':  '3840px',
       },
     },
   },
