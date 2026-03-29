@@ -1,0 +1,174 @@
+/* TheBoard — Global Styles */
+
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;0,6..72,700;1,6..72,400&family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   CSS Custom Properties
+   Design tokens for both weekday and Shabbos modes.
+   Components read these via Tailwind utility classes (hardcoded hex values
+   in component JSX mirror these tokens for Tailwind JIT compatibility).
+   --------------------------------------------------------------------------- */
+
+:root {
+  /* Weekday (default) — Bloomberg terminal dark */
+  --bg-primary: #0a0a0f;
+  --bg-card: #141419;
+  --text-primary: #e8e4de;
+  --text-secondary: #8a8680;
+  --accent-breaking: #d4a24e;
+  --accent-major: #6b8cae;
+  --accent-notable: #5a5a5a;
+  --border-subtle: #1e1e24;
+
+  /* Font stacks */
+  --font-serif: 'Newsreader', 'Georgia', 'Times New Roman', serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+}
+
+/* Shabbos mode — warmer, dimmer palette */
+[data-shabbos='true'] {
+  --bg-primary: #0d0a07;
+  --bg-card: #130e09;
+  --text-primary: #d4cfc8;
+  --text-secondary: #8a8070;
+  --accent-breaking: #c4922e;
+  --accent-major: #5a7a9a;
+  --border-subtle: #2a2015;
+}
+
+/* ---------------------------------------------------------------------------
+   Base resets
+   --------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden; /* Prevent any accidental scroll — this is a kiosk display */
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+
+  /* Improve font rendering on TV/monitor displays */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Prevent text selection — kiosk UI */
+body {
+  user-select: none;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------------------
+   Typography utilities
+   --------------------------------------------------------------------------- */
+
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+.font-sans {
+  font-family: var(--font-sans);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* ---------------------------------------------------------------------------
+   Scrollbar — hidden but functional (overview panel may have long lists)
+   --------------------------------------------------------------------------- */
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--border-subtle);
+  border-radius: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Line clamp utilities (supplements Tailwind's built-in line-clamp)
+   --------------------------------------------------------------------------- */
+
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------------
+   Fade animation keyframes (used by BoardDashboard via inline style transitions)
+   --------------------------------------------------------------------------- */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.7s ease-in-out forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.5s ease-out forwards;
+}
+
+/* ---------------------------------------------------------------------------
+   Kiosk-mode: prevent browser chrome interference
+   --------------------------------------------------------------------------- */
+
+/* Prevent tap highlight on touch screens */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent pull-to-refresh on touch screens */
+body {
+  overscroll-behavior: none;
+}

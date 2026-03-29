@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where git:*)",
+      "Bash(where gh:*)",
+      "Bash(where vercel:*)",
+      "Bash(where curl:*)",
+      "Bash(winget --version)"
+    ]
+  }
+}
