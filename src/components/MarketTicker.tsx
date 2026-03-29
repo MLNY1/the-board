@@ -108,17 +108,21 @@ export default function MarketTicker({ prices }: MarketTickerProps) {
   if (!prices.length) return null;
 
   return (
-    <div style={{
-      display:        'flex',
-      alignItems:     'center',
-      justifyContent: 'space-around',
-      padding:        '8px 28px',
-      borderBottom:   '1px solid var(--border-card)',
-      background:     'rgba(26, 22, 16, 0.6)',
-      height:         '52px',
-      flexShrink:     0,
-      overflowX:      'auto',
-    }}>
+    <div
+      className="market-ticker"
+      style={{
+        display:        'flex',
+        alignItems:     'center',
+        justifyContent: 'space-around',
+        padding:        '8px 28px',
+        borderBottom:   '1px solid var(--border-card)',
+        background:     'rgba(26, 22, 16, 0.6)',
+        height:         '52px',
+        flexShrink:     0,
+        overflowX:      'auto',
+        maxWidth:       '100%',
+      }}
+    >
       {prices.map(p => <Cell key={p.symbol} p={p} />)}
     </div>
   );

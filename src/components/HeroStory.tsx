@@ -53,6 +53,7 @@ export default function HeroStory({ story, isNew = false }: HeroStoryProps) {
           <img
             src={story.image_url!}
             alt=""
+            className="hero-image"
             onError={() => setImgHidden(true)}
             style={{
               float: 'right',

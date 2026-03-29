@@ -94,15 +94,18 @@ export default function ShabbosHeader({ shabbos, isShabbosMode }: ShabbosHeaderP
         )}
 
         {hasTimes && (
-          <div style={{
-            fontFamily: 'var(--font-body)',
-            fontSize: '13px',
-            color: 'var(--text-secondary)',
-            whiteSpace: 'nowrap',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '20px',
-          }}>
+          <div
+            className="header-times"
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: '13px',
+              color: 'var(--text-secondary)',
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '20px',
+            }}
+          >
             <span>
               🕯 Candles{sep}{candleTime}
             </span>

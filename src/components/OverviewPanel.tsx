@@ -41,6 +41,8 @@ export default function OverviewPanel({ stories }: OverviewPanelProps) {
       gap: '10px',
       padding: '7px 0',
       borderBottom: '1px solid rgba(30,26,20,0.4)',
+      minWidth: 0,
+      overflow: 'hidden',
     }}>
       <span style={{ color: 'var(--accent-amber)', fontSize: '6px', flexShrink: 0, lineHeight: 1, marginTop: '2px' }}>●</span>
       <span style={{
@@ -69,7 +71,7 @@ export default function OverviewPanel({ stories }: OverviewPanelProps) {
 
   return (
     <div
-      className="animate-slide-up"
+      className="animate-slide-up overview-outer"
       style={{
         flex: 1,
         overflow: 'hidden',

@@ -65,6 +65,8 @@ html,
 body {
   height: 100%;
   overflow: hidden;
+  max-width: 100vw;
+  overflow-x: hidden;
   background: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-body);
@@ -252,14 +254,19 @@ body {
    --------------------------------------------------------------------------- */
 
 @media (max-width: 1023px) {
-  /* Scrollable page on mobile */
-  html, body            { overflow: auto !important; height: auto !important; }
-  .page-grid            { height: auto !important; overflow: visible !important; }
-  .board-left-col       { height: auto !important; overflow: visible !important; }
-  .board-root           { overflow: visible !important; flex: none !important; }
-  .story-fade           { overflow: visible !important; flex: none !important; }
+  /* Scrollable page — vertical scroll on body, no horizontal bleed */
+  html, body {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    height: auto !important;
+    max-width: 100vw !important;
+  }
+  .page-grid      { height: auto !important; overflow: visible !important; max-width: 100vw !important; }
+  .board-left-col { height: auto !important; overflow: visible !important; max-width: 100vw !important; }
+  .board-root     { overflow: visible !important; flex: none !important; max-width: 100vw !important; }
+  .story-fade     { overflow: visible !important; flex: none !important; max-width: 100vw !important; }
 
-  /* Sticky header + alert strip */
+  /* Sticky header */
   .shabbos-header {
     position: sticky !important;
     top: 0 !important;
@@ -268,45 +275,65 @@ body {
     flex-wrap: wrap !important;
     padding: 10px 16px !important;
     min-height: auto !important;
+    max-width: 100vw !important;
+    overflow: hidden !important;
+    gap: 2px 0 !important;
   }
+
+  /* Header layout: logo + clock on row 1, parsha/times on row 2 */
+  .header-logo   { flex: 1 !important; width: auto !important; min-width: 0 !important; }
+  .header-center { order: 3 !important; width: 100% !important; flex: none !important; text-align: left !important; min-width: 0 !important; }
+  .header-clock  { min-width: 0 !important; flex-shrink: 0 !important; }
+
+  /* Times line: allow wrap so candles + havdalah + location don't overflow */
+  .header-times  { white-space: normal !important; flex-wrap: wrap !important; gap: 4px 16px !important; }
+
+  /* Sticky alert strip */
   .mobile-alert-strip {
     display: flex;
     position: sticky !important;
     top: 56px !important;
     z-index: 10 !important;
     background: var(--bg-primary) !important;
+    max-width: 100vw !important;
   }
 
-  /* Header layout */
-  .header-logo    { min-width: 0 !important; width: 100%; }
-  .header-center  { flex: 1 !important; text-align: left !important; }
-  .header-clock   { min-width: 0 !important; }
-
-  /* Hero */
-  .hero-outer-pad      { padding: 12px 16px 8px; }
-  .hero-inner-pad      { padding: 16px 18px; }
+  /* Hero — hide image thumbnail on mobile (too cramped) */
+  .hero-outer-pad      { padding: 12px 16px 8px; max-width: 100%; overflow: hidden; }
+  .hero-inner-pad      { padding: 16px 18px; max-width: 100%; overflow: hidden; }
   .hero-headline       { font-size: 34px; }
   .hero-headline-major { font-size: 30px; }
-  .hero-summary        { font-size: 16px; }
+  .hero-summary        { font-size: 16px; max-width: 100% !important; }
   .hero-source-line    { font-size: 14px; }
+  .hero-image          { display: none !important; }
 
-  /* Cards — single column, all visible (scrollable page) */
-  .cards-grid                        { grid-template-columns: 1fr; }
-  .cards-outer-pad                   { padding: 0 16px; }
-  .card-wrapper                      { padding: 14px 16px; }
-  .card-badge-text                   { font-size: 9px; padding: 2px 8px; }
-  .card-headline                     { font-size: 20px; font-weight: 500; }
-  .card-summary                      { font-size: 14px; color: var(--text-body); margin-bottom: 8px; -webkit-line-clamp: 1; }
-  .card-source                       { font-size: 13px; }
+  /* Market ticker — constrained horizontal scroll, doesn't push layout wider */
+  .market-ticker {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100vw !important;
+    padding: 8px 16px !important;
+  }
 
-  /* Notable */
-  .notable-container { flex-direction: column; gap: 0; padding: 6px 16px 4px; overflow: visible; flex: none; }
-  .notable-col       { flex: none; }
-  .notable-row       { flex: none; min-height: 32px; max-height: none; padding: 4px 0; }
-  .notable-text      { font-size: 14px; white-space: normal !important; }
+  /* Cards — single column, all visible */
+  .cards-grid      { grid-template-columns: 1fr; max-width: 100%; }
+  .cards-outer-pad { padding: 0 16px; }
+  .card-wrapper    { padding: 14px 16px; max-width: 100%; overflow: hidden; }
+  .card-badge-text { font-size: 9px; padding: 2px 8px; }
+  .card-headline   { font-size: 20px; font-weight: 500; }
+  .card-summary    { font-size: 14px; color: var(--text-body); margin-bottom: 8px; -webkit-line-clamp: 1; }
+  .card-source     { font-size: 13px; }
 
-  /* Overview */
-  .overview-cols { grid-template-columns: 1fr; }
+  /* Notable — single column, truncate with ellipsis */
+  .notable-container { flex-direction: column; gap: 0; padding: 6px 16px 4px; overflow: visible; flex: none; max-width: 100%; }
+  .notable-col       { flex: none; min-width: 0; max-width: 100%; }
+  .notable-row       { flex: none; min-height: 32px; max-height: none; padding: 4px 0; overflow: hidden; }
+  .notable-text      { font-size: 14px; }
+
+  /* Overview — single column */
+  .overview-cols  { grid-template-columns: 1fr; overflow: hidden; }
+  .overview-outer { overflow: visible !important; flex: none !important; padding: 12px 16px 0 !important; max-width: 100vw !important; }
 
   /* Footer */
   .board-footer { font-size: 12px; padding: 8px 16px; }
