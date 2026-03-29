@@ -1,20 +1,15 @@
 'use client';
 
 /**
- * BoardDashboard — orchestrating client component for TheBoard.
+ * BoardDashboard — orchestrates the left (news) column.
  *
- * Rotation state machine (self-scheduling timer loop):
- *   HERO(0) → [20s breaking / 12s major] → HERO(1) → ... → HERO(n) → OVERVIEW(15s) → LOOP
+ * Rotation state machine (self-scheduling timer chain):
+ *   HERO(0) → [20s breaking / 12s major] → HERO(1) → ... → OVERVIEW(15s) → LOOP
  *
- * Bug that was here before: scheduleNextTransition was called from a useEffect
- * whose deps included heroIndex. Fades update heroIndex mid-transition, which
- * re-triggered the effect, which called clearAllTimers() — killing the pending
- * fade-in timer. isVisible got stuck at false → blank screen forever.
+ * Transitions: 800ms opacity fade — set isVisible=false, wait FADE_OUT_MS,
+ * swap content, wait FADE_IN_DELAY_MS, set isVisible=true, call scheduleNext.
  *
- * Fix: the rotation loop is a purely imperative self-scheduling timer chain.
- * It holds a ref to the latest stories (storiesRef) so it doesn't need to be
- * recreated on every poll. isVisible is separate state, never in effect deps.
- * No useEffect re-runs the scheduler — only the mount effect starts it once.
+ * Offline detection: 3 consecutive poll failures → isStale=true → "Using cached data".
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -22,7 +17,6 @@ import ShabbosHeader from './ShabbosHeader';
 import HeroStory from './HeroStory';
 import StoryCard from './StoryCard';
 import OverviewPanel from './OverviewPanel';
-import RedAlertBanner from './RedAlertBanner';
 import type { DigestResponse, DigestStoryItem, ShabbosWindowMeta } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -33,10 +27,10 @@ const POLL_INTERVAL_MS    = 60_000;
 const HERO_BREAKING_MS    = 20_000;
 const HERO_MAJOR_MS       = 12_000;
 const OVERVIEW_MS         = 15_000;
-const FADE_OUT_MS         = 600;   // opacity → 0
-const FADE_IN_DELAY_MS    = 80;    // brief pause after content swap before opacity → 1
-
+const FADE_OUT_MS         = 800;
+const FADE_IN_DELAY_MS    = 100;
 const INTERRUPT_THRESHOLD = 80;
+const STALE_FAIL_COUNT    = 3;
 
 type Phase = 'HERO' | 'OVERVIEW';
 
@@ -49,31 +43,28 @@ interface BoardDashboardProps {
 }
 
 export default function BoardDashboard({ initialData }: BoardDashboardProps) {
-  // ── Render state ───────────────────────────────────────────────────────────
-  const [data, setData]                   = useState<DigestResponse | null>(initialData);
-  const [isOffline, setIsOffline]         = useState(false);
+  // ── Render state ──────────────────────────────────────────────────────────
+  const [data, setData]                    = useState<DigestResponse | null>(initialData);
+  const [isStale, setIsStale]              = useState(false);
   const [countdownToShabbos, setCountdown] = useState<string | null>(null);
 
-  // Rotation display state — what's currently visible
-  const [phase, setPhase]         = useState<Phase>('HERO');
-  const [heroIndex, setHeroIndex] = useState(0);
-  const [isVisible, setIsVisible] = useState(true);
+  const [phase, setPhase]           = useState<Phase>('HERO');
+  const [heroIndex, setHeroIndex]   = useState(0);
+  const [isVisible, setIsVisible]   = useState(true);
   const [newStoryId, setNewStoryId] = useState<string | null>(null);
 
-  // ── Refs (never trigger re-renders) ───────────────────────────────────────
-  const mountedRef       = useRef(true);
-  const storiesRef       = useRef<DigestStoryItem[]>(initialData?.stories ?? []);
-  const seenIdsRef       = useRef<Set<string>>(new Set(initialData?.stories.map(s => s.id) ?? []));
-  const zipRef           = useRef('');
+  // ── Refs ──────────────────────────────────────────────────────────────────
+  const mountedRef    = useRef(true);
+  const storiesRef    = useRef<DigestStoryItem[]>(initialData?.stories ?? []);
+  const seenIdsRef    = useRef<Set<string>>(new Set(initialData?.stories.map(s => s.id) ?? []));
+  const zipRef        = useRef('');
+  const failCountRef  = useRef(0);
 
-  // Single rotation timer — the self-scheduling loop handle
-  const rotationTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Short-lived fade timers — independent of rotation, never cleared by rotation
-  const fadeTimers       = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const rotationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fadeTimers    = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const pollTimer     = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const pollTimer        = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // ── Timer helpers ──────────────────────────────────────────────────────────
+  // ── Timer helpers ─────────────────────────────────────────────────────────
 
   function clearRotationTimer() {
     if (rotationTimer.current) clearTimeout(rotationTimer.current);
@@ -85,26 +76,20 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
     fadeTimers.current = [];
   }
 
-  // ── Fade transition helper ─────────────────────────────────────────────────
-  /**
-   * Fades out, swaps content, fades in — then calls onComplete.
-   * Uses its own dedicated fadeTimers ref so rotation timers don't kill it.
-   */
+  // ── Fade transition ───────────────────────────────────────────────────────
+
   function doFade(swapContent: () => void, onComplete?: () => void) {
     clearFadeTimers();
-
     setIsVisible(false);
 
     const t1 = setTimeout(() => {
       if (!mountedRef.current) return;
       swapContent();
-
       const t2 = setTimeout(() => {
         if (!mountedRef.current) return;
         setIsVisible(true);
         onComplete?.();
       }, FADE_IN_DELAY_MS);
-
       fadeTimers.current.push(t2);
     }, FADE_OUT_MS);
 
@@ -112,71 +97,53 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
   }
 
   // ── Self-scheduling rotation loop ─────────────────────────────────────────
-  /**
-   * Schedules the NEXT transition from the current display state.
-   * After the delay, fades to the next state, then calls itself again.
-   * This is entirely imperative — no useEffect deps, no stale closures on stories
-   * because it always reads storiesRef.current at call time.
-   */
+
   const scheduleNext = useCallback((currentPhase: Phase, currentHeroIndex: number) => {
     clearRotationTimer();
 
     const stories = storiesRef.current;
-    const heroes = stories.filter(s => s.tier === 'breaking' || s.tier === 'major')
-                          .sort((a, b) => b.importance_score - a.importance_score);
+    const heroes  = stories
+      .filter(s => s.tier === 'breaking' || s.tier === 'major')
+      .sort((a, b) => b.importance_score - a.importance_score);
 
-    let displayMs: number;
-    if (currentPhase === 'HERO') {
-      const hero = heroes[currentHeroIndex];
-      displayMs = hero?.tier === 'breaking' ? HERO_BREAKING_MS : HERO_MAJOR_MS;
-    } else {
-      displayMs = OVERVIEW_MS;
-    }
+    const displayMs = currentPhase === 'HERO'
+      ? (heroes[currentHeroIndex]?.tier === 'breaking' ? HERO_BREAKING_MS : HERO_MAJOR_MS)
+      : OVERVIEW_MS;
 
     rotationTimer.current = setTimeout(() => {
       if (!mountedRef.current) return;
 
-      // Recompute stories at transition time (may have been updated by poll)
-      const latestStories = storiesRef.current;
-      const latestHeroes = latestStories
+      const latest       = storiesRef.current;
+      const latestHeroes = latest
         .filter(s => s.tier === 'breaking' || s.tier === 'major')
         .sort((a, b) => b.importance_score - a.importance_score);
 
       let nextPhase: Phase;
-      let nextHeroIndex: number;
+      let nextIdx: number;
 
       if (currentPhase === 'HERO') {
-        const nextIdx = currentHeroIndex + 1;
-        const hasOverview = latestStories.some(s => s.tier === 'notable' || s.tier === 'background');
+        const next        = currentHeroIndex + 1;
+        const hasOverview = latest.some(s => s.tier === 'notable' || s.tier === 'background');
 
-        if (nextIdx < latestHeroes.length) {
-          nextPhase = 'HERO';
-          nextHeroIndex = nextIdx;
+        if (next < latestHeroes.length) {
+          nextPhase = 'HERO'; nextIdx = next;
         } else if (hasOverview) {
-          nextPhase = 'OVERVIEW';
-          nextHeroIndex = 0;
+          nextPhase = 'OVERVIEW'; nextIdx = 0;
         } else {
-          nextPhase = 'HERO';
-          nextHeroIndex = 0;
+          nextPhase = 'HERO'; nextIdx = 0;
         }
       } else {
-        // OVERVIEW → back to first hero
-        nextPhase = 'HERO';
-        nextHeroIndex = 0;
+        nextPhase = 'HERO'; nextIdx = 0;
       }
 
       doFade(
-        () => {
-          setPhase(nextPhase);
-          setHeroIndex(nextHeroIndex);
-          setNewStoryId(null);
-        },
-        () => scheduleNext(nextPhase, nextHeroIndex)
+        () => { setPhase(nextPhase); setHeroIndex(nextIdx); setNewStoryId(null); },
+        () => scheduleNext(nextPhase, nextIdx)
       );
     }, displayMs);
-  }, []); // stable — reads refs at call time, never re-created
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Data polling ───────────────────────────────────────────────────────────
+  // ── Data polling ──────────────────────────────────────────────────────────
 
   const fetchDigest = useCallback(async () => {
     try {
@@ -188,18 +155,20 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
       const fresh: DigestResponse = await res.json();
       if (!mountedRef.current) return;
 
-      setIsOffline(false);
+      // Reset offline counter
+      failCountRef.current = 0;
+      setIsStale(false);
+
       storiesRef.current = fresh.stories;
       setData(fresh);
 
-      // Detect a new high-importance story that hasn't been seen yet
+      // Interrupt rotation for new high-importance story
       const newHero = fresh.stories.find(
         s => !seenIdsRef.current.has(s.id) && s.importance_score >= INTERRUPT_THRESHOLD
       );
       fresh.stories.forEach(s => seenIdsRef.current.add(s.id));
 
       if (newHero) {
-        // Interrupt rotation — jump to this story immediately
         const heroes = fresh.stories
           .filter(s => s.tier === 'breaking' || s.tier === 'major')
           .sort((a, b) => b.importance_score - a.importance_score);
@@ -207,22 +176,18 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
 
         clearRotationTimer();
         doFade(
-          () => {
-            setPhase('HERO');
-            setHeroIndex(idx);
-            setNewStoryId(newHero.id);
-          },
+          () => { setPhase('HERO'); setHeroIndex(idx); setNewStoryId(newHero.id); },
           () => scheduleNext('HERO', idx)
         );
       }
 
-      // Update Shabbos countdown
+      // Shabbos countdown
       const { shabbos } = fresh.meta;
       if (shabbos.window_start && !shabbos.is_active) {
         const diffMs = new Date(shabbos.window_start).getTime() - Date.now();
         if (diffMs > 0) {
           const totalMin = Math.floor(diffMs / 60000);
-          const hrs = Math.floor(totalMin / 60);
+          const hrs  = Math.floor(totalMin / 60);
           const mins = totalMin % 60;
           setCountdown(hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`);
         }
@@ -230,22 +195,19 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
         setCountdown(null);
       }
     } catch {
-      if (mountedRef.current) setIsOffline(true);
+      if (!mountedRef.current) return;
+      failCountRef.current++;
+      if (failCountRef.current >= STALE_FAIL_COUNT) setIsStale(true);
     }
   }, [scheduleNext]);
 
-  // ── Mount / unmount ────────────────────────────────────────────────────────
+  // ── Mount / unmount ───────────────────────────────────────────────────────
 
   useEffect(() => {
     mountedRef.current = true;
+    zipRef.current     = new URLSearchParams(window.location.search).get('zip') ?? '';
 
-    // Read ZIP from URL
-    zipRef.current = new URLSearchParams(window.location.search).get('zip') ?? '';
-
-    // Start the rotation loop
     scheduleNext('HERO', 0);
-
-    // Start polling
     pollTimer.current = setInterval(fetchDigest, POLL_INTERVAL_MS);
 
     return () => {
@@ -256,170 +218,224 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Derived render values ──────────────────────────────────────────────────
+  // ── Derived values ────────────────────────────────────────────────────────
 
-  const stories    = data?.stories ?? [];
-  const heroes     = stories
+  const stories = data?.stories ?? [];
+  const heroes  = stories
     .filter(s => s.tier === 'breaking' || s.tier === 'major')
     .sort((a, b) => b.importance_score - a.importance_score);
 
-  // Fallback: if no breaking/major stories, promote top notable as hero
   const displayHeroes = heroes.length > 0
     ? heroes
     : stories.filter(s => s.tier === 'notable').slice(0, 3);
 
-  const currentHero = displayHeroes[heroIndex] ?? displayHeroes[0] ?? null;
+  const currentHero     = displayHeroes[heroIndex] ?? displayHeroes[0] ?? null;
+  const supportingCards = displayHeroes
+    .filter(s => s.id !== currentHero?.id)
+    .slice(0, 4);
 
-  // Supporting cards: other heroes (excluding currentHero), or top notables
-  const supportingCards = displayHeroes.length > 1
-    ? displayHeroes.filter(s => s.id !== currentHero?.id).slice(0, 2)
-    : stories.filter(s => s.tier === 'notable').slice(0, 2);
+  // Notable list: stories not shown in hero or supporting cards
+  const shownIds    = new Set([currentHero?.id, ...supportingCards.map(s => s.id)].filter(Boolean));
+  const notableList = stories
+    .filter(s => !shownIds.has(s.id) && (s.tier === 'notable' || s.tier === 'background'))
+    .slice(0, 20);
 
-  const isShabbosMode = data?.meta.shabbos.is_active ?? false;
+  const isShabbosMode: boolean = data?.meta.shabbos.is_active ?? false;
   const shabbosWindowMeta: ShabbosWindowMeta = data?.meta.shabbos ?? {
-    is_active: false,
-    window_start: null,
-    window_end: null,
-    parsha: null,
+    is_active: false, window_start: null, window_end: null, parsha: null,
   };
 
   const lastUpdated = data?.meta.last_updated
     ? new Date(data.meta.last_updated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
     : null;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    // data-shabbos activates the Shabbos CSS custom property overrides in globals.css
     <div
-      data-shabbos={isShabbosMode ? 'true' : 'false'}
-      className="board-root flex flex-col h-screen overflow-hidden"
+      className={isShabbosMode ? 'shabbos-mode' : ''}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        overflow: 'hidden',
+        background: 'var(--bg-primary)',
+      }}
     >
-      {/* Red alert banner — renders nothing when no active alerts */}
-      <RedAlertBanner />
-
-      {/* Header */}
       <ShabbosHeader
         shabbos={shabbosWindowMeta}
         countdownToShabbos={countdownToShabbos}
         isShabbosMode={isShabbosMode}
       />
 
-      {/* Main content — opacity fades on rotation transitions */}
-      <main
-        className="flex-1 flex flex-col min-h-0"
+      {/* Content area — fades on transitions */}
+      <div
+        className="story-fade"
         style={{
+          flex: 1,
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
           opacity: isVisible ? 1 : 0,
-          transition: `opacity ${FADE_OUT_MS}ms ease-in-out`,
         }}
       >
         {stories.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <p
-                className="font-serif mb-2"
-                style={{ fontSize: 'clamp(1.25rem, 2vw, 1.75rem)', color: 'var(--text-secondary)' }}
-              >
-                Gathering stories…
-              </p>
-              <p className="font-sans" style={{ fontSize: '1rem', color: 'var(--text-dim)' }}>
-                First update arrives within 20 minutes.
-              </p>
-            </div>
+
+          /* Empty state */
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+          }}>
+            <p style={{ fontFamily: 'var(--font-headline)', fontSize: '24px', color: 'var(--text-secondary)' }}>
+              Gathering stories…
+            </p>
+            <p style={{ fontFamily: 'var(--font-body)', fontSize: '16px', color: 'var(--text-dim)' }}>
+              First update arrives within 20 minutes.
+            </p>
           </div>
 
         ) : phase === 'OVERVIEW' ? (
+
+          /* OVERVIEW phase */
           <OverviewPanel stories={stories} isShabbosMode={isShabbosMode} />
 
         ) : (
-          /* HERO phase */
-          <div
-            className="flex-1 flex flex-col min-h-0"
-            style={{
-              padding: 'clamp(1rem, 2vh, 1.5rem) clamp(1.5rem, 3vw, 2.5rem)',
-              gap: 'clamp(0.75rem, 1.5vh, 1rem)',
-            }}
-          >
-            {currentHero ? (
-              <HeroStory
-                story={currentHero}
-                isNew={currentHero.id === newStoryId}
-                isShabbosMode={isShabbosMode}
-              />
-            ) : (
-              <div className="flex-1 flex items-center justify-center">
-                <p className="font-serif" style={{ fontSize: '1.25rem', color: 'var(--text-dim)' }}>
-                  Loading stories…
-                </p>
-              </div>
-            )}
 
+          /* HERO phase */
+          <>
+            {/* Hero story */}
+            <div style={{ flexShrink: 0 }}>
+              {currentHero ? (
+                <HeroStory
+                  story={currentHero}
+                  isNew={currentHero.id === newStoryId}
+                  isShabbosMode={isShabbosMode}
+                />
+              ) : (
+                <div style={{
+                  padding: '40px 28px',
+                  fontFamily: 'var(--font-headline)',
+                  fontSize: '22px',
+                  color: 'var(--text-dim)',
+                }}>
+                  Loading stories…
+                </div>
+              )}
+            </div>
+
+            {/* Supporting cards (up to 4 in 2×2 grid) */}
             {supportingCards.length > 0 && (
-              <div
-                className="grid grid-cols-2 shrink-0"
-                style={{
-                  gap: 'clamp(0.75rem, 1.5vw, 1rem)',
-                  height: 'clamp(170px, 19vh, 220px)',
-                }}
-              >
-                {supportingCards.slice(0, 2).map(story => (
+              <div style={{
+                flexShrink: 0,
+                padding: '0 28px',
+                display: 'grid',
+                gridTemplateColumns: supportingCards.length === 1 ? '1fr' : '1fr 1fr',
+                gap: '10px',
+                maxHeight: 'clamp(180px, 28vh, 300px)',
+                overflow: 'hidden',
+              }}>
+                {supportingCards.map(story => (
                   <StoryCard key={story.id} story={story} isShabbosMode={isShabbosMode} />
                 ))}
-                {supportingCards.length === 1 && (
-                  <div
-                    className="rounded-lg"
-                    style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-card)' }}
-                  />
-                )}
               </div>
             )}
-          </div>
+
+            {/* Notable list — fills remaining space, rows stretch to eliminate blank area */}
+            {notableList.length > 0 && (() => {
+              const mid          = Math.ceil(notableList.length / 2);
+              const leftNotables  = notableList.slice(0, mid);
+              const rightNotables = notableList.slice(mid);
+              return (
+                <div style={{
+                  flex: 1,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  gap: '0 28px',
+                  padding: '8px 28px 6px',
+                }}>
+                  {[leftNotables, rightNotables].map((col, ci) => (
+                    <div key={ci} style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                      {col.map(story => (
+                        <div
+                          key={story.id}
+                          style={{
+                            flex: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            borderBottom: '1px solid var(--border-subtle)',
+                            minHeight: '24px',
+                            maxHeight: '56px',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <span style={{ color: 'var(--accent-amber)', fontSize: '5px', flexShrink: 0 }}>●</span>
+                          <span style={{
+                            fontFamily: 'var(--font-body)',
+                            fontSize: '15px',
+                            color: 'var(--text-body)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}>
+                            {story.headline}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </>
         )}
-      </main>
+      </div>
 
-      {/* ── Footer status bar ── */}
-      <footer
-        className="shrink-0 flex items-center justify-center font-sans"
-        style={{
-          height: '40px',
-          borderTop: '1px solid var(--border-subtle)',
-          gap: '1.5rem',
-          fontSize: '0.8125rem',
-          color: 'var(--text-dim)',
-          backgroundColor: 'var(--bg-primary)',
-        }}
-      >
-        <span>
-          {stories.length} stor{stories.length !== 1 ? 'ies' : 'y'}
-        </span>
-
-        <span style={{ color: 'var(--border-subtle)' }}>·</span>
+      {/* Footer */}
+      <div style={{
+        flexShrink: 0,
+        padding: '10px 28px',
+        borderTop: '1px solid var(--border-subtle)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        fontFamily: 'var(--font-body)',
+        fontSize: '13px',
+        color: 'var(--text-dim)',
+      }}>
+        <span>{stories.length} stor{stories.length !== 1 ? 'ies' : 'y'}</span>
 
         {lastUpdated && (
           <>
+            <span style={{ color: 'var(--border-card)' }}>·</span>
             <span>Updated {lastUpdated}</span>
-            <span style={{ color: 'var(--border-subtle)' }}>·</span>
           </>
         )}
 
-        <span className="flex items-center gap-1.5">
-          {isOffline ? (
-            <>
-              <span className="offline-dot" />
-              <span style={{ color: 'var(--accent-breaking)' }}>Offline</span>
-            </>
-          ) : (
-            <>
-              <span className="live-dot" />
-              <span style={{ color: 'var(--text-secondary)' }}>Live</span>
-            </>
-          )}
+        <span style={{ color: 'var(--border-card)' }}>·</span>
+
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{
+            display: 'inline-block',
+            width: '6px',
+            height: '6px',
+            background: isStale ? '#5a5448' : 'var(--accent-green)',
+            borderRadius: '50%',
+            animation: isStale ? 'none' : 'greenPulse 3s ease-in-out infinite',
+          }} />
+          <span style={{ color: isStale ? 'var(--text-dim)' : 'var(--accent-green)' }}>
+            {isStale ? 'Using cached data' : 'Live'}
+          </span>
         </span>
 
-        <span style={{ color: 'var(--border-subtle)' }}>·</span>
-
+        <span style={{ color: 'var(--border-card)' }}>·</span>
         <span>Next refresh {data?.meta.next_refresh_seconds ?? 60}s</span>
-      </footer>
+      </div>
     </div>
   );
 }

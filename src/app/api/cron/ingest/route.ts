@@ -43,6 +43,11 @@ const RSS_FEEDS = [
   { url: 'http://rss.cnn.com/rss/edition.rss', source: 'CNN' },
   { url: 'https://moxie.foxnews.com/google-publisher/latest.xml', source: 'Fox News' },
   { url: 'https://feeds.nbcnews.com/nbcnews/public/news/world', source: 'NBC News' },
+  // Israel-focused feeds
+  { url: 'https://www.jpost.com/rss/rssfeedsfrontpage.aspx', source: 'Jerusalem Post' },
+  { url: 'https://www.ynetnews.com/Integration/StoryRss2.xml', source: 'Ynet' },
+  { url: 'https://www.israelnationalnews.com/RSS', source: 'Arutz Sheva' },
+  { url: 'https://www.i24news.tv/en/feed', source: 'i24NEWS' },
 ];
 
 const AI_BATCH_SIZE = 30;
@@ -336,6 +341,28 @@ export async function GET(req: NextRequest) {
     if (toProcess.length > 0) {
       const stories = await processWithClaude(toProcess);
       log.push(`Claude returned ${stories.length} stories`);
+
+      // ── Israel/ME importance boost (+15, capped at 100) ──────────────────
+      const israelKeywords = [
+        'israel', 'israeli', 'jerusalem', 'tel aviv', 'idf', 'gaza', 'hamas',
+        'hezbollah', 'iran', 'iranian', 'houthi', 'west bank', 'netanyahu',
+        'knesset', 'mossad', 'kibbutz', 'negev', 'golan', 'lebanon',
+        'palestinian', 'intifada', 'shin bet', 'iron dome', 'tzahal',
+        'hostage', 'hostages', 'sinwar', 'gallant', 'smotrich', 'ben gvir',
+      ];
+      let boostedCount = 0;
+      for (const story of stories) {
+        const text = `${story.headline} ${story.summary}`.toLowerCase();
+        if (israelKeywords.some(kw => text.includes(kw))) {
+          story.importance_score = Math.min(100, story.importance_score + 15);
+          if (story.importance_score >= 80)      story.tier = 'breaking';
+          else if (story.importance_score >= 60) story.tier = 'major';
+          else if (story.importance_score >= 40) story.tier = 'notable';
+          else                                   story.tier = 'background';
+          boostedCount++;
+        }
+      }
+      if (boostedCount > 0) log.push(`Israel boost applied to ${boostedCount} stories`);
 
       // Build a lookup: article_id → source info
       const articleLookup = new Map(toProcess.map((a) => [a.id, a]));

@@ -1,204 +1,123 @@
-/**
- * GET /api/red-alert
- *
- * Checks for active Tzeva Adom (Pikud HaOref rocket alerts) in Israel.
- * Returns { active, alerts, last_checked }.
- *
- * Sources (tried in order, first success wins):
- *  1. Pikud HaOref AlertsHistory endpoint — recent alert history, no geo-block
- *  2. tzevaadom.co.il community API — fallback
- *
- * If both fail or RED_ALERT_ENABLED != 'true', returns { active: false }.
- * Never throws — all errors are caught and silently ignored.
- *
- * An alert is considered "active" if any alert occurred within the last 10 minutes.
- */
-
 import { NextResponse } from 'next/server';
-import type { RedAlertResponse, RedAlertItem } from '@/types';
 
-const ACTIVE_WINDOW_MS   = 10 * 60 * 1000; // 10 minutes
-const FETCH_TIMEOUT_MS   = 5_000;
+export const dynamic    = 'force-dynamic';
+export const revalidate = 0;
 
-// ---------------------------------------------------------------------------
-// Fetch helpers with timeout
-// ---------------------------------------------------------------------------
+const TIMEOUT_MS        = 5_000;
+const HISTORY_LIMIT     = 20;
+const ACTIVE_WINDOW_MS  = 30 * 60 * 1000; // 30 minutes
 
-/** Wraps fetch with an AbortController timeout. Throws on timeout or HTTP error. */
-async function fetchWithTimeout(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
+async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer      = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        // Pikud HaOref requires these headers to not return 403
-        'Referer': 'https://www.oref.org.il/',
-        'X-Requested-With': 'XMLHttpRequest',
-        'User-Agent': 'Mozilla/5.0',
-      },
-      cache: 'no-store',
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res;
+    return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
 }
 
-// ---------------------------------------------------------------------------
-// Source 1: Pikud HaOref AlertsHistory
-// ---------------------------------------------------------------------------
-
-interface OrefHistoryItem {
-  data: string;       // city name in Hebrew, e.g. "תל אביב - מרכז העיר"
-  date: string;       // "2024-04-13"
-  time: string;       // "14:23:00"
-  alertDate: string;  // "2024-04-13 14:23:00"
-  category?: number;
+/** Returns true if the alertDate string is within the last 30 minutes */
+function isRecent(alertDate: string): boolean {
+  if (!alertDate) return false;
+  try {
+    // oref.org.il dates are Israel local time (UTC+3)
+    const ms = alertDate.includes('T')
+      ? Date.parse(alertDate)
+      : Date.parse(alertDate.replace(' ', 'T') + '+03:00');
+    return !isNaN(ms) && Date.now() - ms < ACTIVE_WINDOW_MS;
+  } catch { return false; }
 }
 
-async function fetchOrefHistory(): Promise<RedAlertItem[]> {
-  const res = await fetchWithTimeout(
-    'https://www.oref.org.il/WarningMessages/History/AlertsHistory.json'
-  );
-  const raw: OrefHistoryItem[] = await res.json();
-  if (!Array.isArray(raw)) return [];
-
-  const cutoff = Date.now() - ACTIVE_WINDOW_MS;
-  const recent: RedAlertItem[] = [];
-
-  for (const item of raw.slice(0, 200)) { // cap parsing to first 200 entries
-    // Parse alertDate: "2024-04-13 14:23:00" (Israel local time, UTC+3)
-    const alertMs = Date.parse(item.alertDate.replace(' ', 'T') + '+03:00');
-    if (isNaN(alertMs) || alertMs < cutoff) continue;
-
-    const timeStr = new Date(alertMs).toLocaleTimeString('en-US', {
-      hour: 'numeric', minute: '2-digit', hour12: true,
-    });
-
-    recent.push({
-      cities: [item.data],
-      time: timeStr,
-      threat: item.category === 1 ? 'missiles' : 'alert',
-    });
-  }
-
-  return recent;
-}
-
-// ---------------------------------------------------------------------------
-// Source 2: tzevaadom.co.il community API
-// ---------------------------------------------------------------------------
-
-interface TzevaadomItem {
-  cities: string[];
-  threat: number | string;
-  time: number; // Unix timestamp (seconds)
-  id?: string;
-}
-
-async function fetchTzevaadom(): Promise<RedAlertItem[]> {
-  const res = await fetchWithTimeout('https://api.tzevaadom.co.il/notifications');
-  const raw: TzevaadomItem[] = await res.json();
-  if (!Array.isArray(raw)) return [];
-
-  const cutoff = (Date.now() - ACTIVE_WINDOW_MS) / 1000; // in seconds
-  const recent: RedAlertItem[] = [];
-
-  for (const item of raw.slice(0, 50)) {
-    if (item.time < cutoff) continue;
-
-    const timeStr = new Date(item.time * 1000).toLocaleTimeString('en-US', {
-      hour: 'numeric', minute: '2-digit', hour12: true,
-    });
-
-    const threatLabel =
-      item.threat === 1 || item.threat === 'missiles' ? 'missiles' :
-      item.threat === 2 || item.threat === 'hostile_aircraft' ? 'hostile_aircraft' :
-      'alert';
-
-    recent.push({
-      cities: Array.isArray(item.cities) ? item.cities : [],
-      time: timeStr,
-      threat: threatLabel,
-    });
-  }
-
-  return recent;
-}
-
-// ---------------------------------------------------------------------------
-// Merge + deduplicate alert items into a summary
-// ---------------------------------------------------------------------------
-
-/**
- * Collapses an array of RedAlertItems into a single item with all unique cities.
- * This gives the banner one consolidated object with the full city list.
- */
-function consolidateAlerts(items: RedAlertItem[]): RedAlertItem[] {
-  if (items.length === 0) return [];
-
-  const allCities = Array.from(
-    new Set(items.flatMap(i => i.cities).filter(Boolean))
-  );
-  const latestTime = items[0]?.time ?? '';
-  const threat = items[0]?.threat ?? 'alert';
-
-  return [{ cities: allCities, time: latestTime, threat }];
-}
-
-// ---------------------------------------------------------------------------
-// Route handler
-// ---------------------------------------------------------------------------
-
-export async function GET(): Promise<NextResponse> {
-  const empty: RedAlertResponse = {
+export async function GET() {
+  const empty = {
     active: false,
-    alerts: [],
+    alerts: [] as object[],
     last_checked: new Date().toISOString(),
+    source: 'disabled',
   };
 
-  // Feature flag — return empty immediately if not enabled
   if (process.env.RED_ALERT_ENABLED !== 'true') {
-    return NextResponse.json(empty, {
-      headers: { 'Cache-Control': 'no-store' },
-    });
+    return NextResponse.json(empty, { headers: { 'Cache-Control': 'no-store' } });
   }
 
+  // ── Source 1: Pikud HaOref AlertsHistory ─────────────────────────────────
+  // Returns full history regardless of activity level. Often geo-blocked from US.
   try {
-    let items: RedAlertItem[] = [];
-
-    // Try source 1: Pikud HaOref history
-    try {
-      items = await fetchOrefHistory();
-    } catch {
-      // Geo-blocked or unavailable — try fallback
-    }
-
-    // If source 1 returned nothing recent, try source 2
-    if (items.length === 0) {
-      try {
-        items = await fetchTzevaadom();
-      } catch {
-        // Both sources failed — return inactive silently
+    const res = await fetchWithTimeout(
+      'https://www.oref.org.il/WarningMessages/History/AlertsHistory.json',
+      {
+        headers: {
+          'Referer':          'https://www.oref.org.il/',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept':           'application/json',
+          'User-Agent':       'Mozilla/5.0',
+        },
       }
+    );
+
+    if (res.ok) {
+      const raw = await res.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const alerts = (Array.isArray(raw) ? raw : []).slice(0, HISTORY_LIMIT).map((a: any) => ({
+        cities:    a.data      ?? '',
+        time:      a.time      ?? '',
+        date:      a.date      ?? '',
+        alertDate: a.alertDate ?? '',
+        title:     a.title     ?? '',
+        category:  String(a.cat ?? ''),
+      }));
+
+      const active = alerts.some(a => isRecent(a.alertDate));
+      console.log(`[RedAlert] Source: oref.org.il — ${alerts.length} alerts, active=${active}`);
+
+      return NextResponse.json(
+        { active, alerts, last_checked: new Date().toISOString(), source: 'oref' },
+        { headers: { 'Cache-Control': 'no-store' } }
+      );
     }
-
-    const consolidated = consolidateAlerts(items);
-    const response: RedAlertResponse = {
-      active: consolidated.length > 0,
-      alerts: consolidated,
-      last_checked: new Date().toISOString(),
-    };
-
-    return NextResponse.json(response, {
-      headers: { 'Cache-Control': 'no-store' },
-    });
-  } catch {
-    // Never surface errors to the client — just return inactive
-    return NextResponse.json(empty, {
-      headers: { 'Cache-Control': 'no-store' },
-    });
+    console.log(`[RedAlert] oref.org.il returned HTTP ${res.status} — trying tzevaadom`);
+  } catch (err) {
+    console.log(`[RedAlert] oref.org.il failed (${(err as Error).message}) — trying tzevaadom`);
   }
+
+  // ── Source 2: tzevaadom community API ─────────────────────────────────────
+  // Community mirror accessible from outside Israel.
+  try {
+    const res = await fetchWithTimeout('https://api.tzevaadom.co.il/notifications');
+
+    if (res.ok) {
+      const raw = await res.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const alerts = (Array.isArray(raw) ? raw : []).slice(0, HISTORY_LIMIT).map((a: any) => {
+        const alertDate = a.alertDate
+          ?? (a.timestamp ? new Date(a.timestamp * 1000).toISOString() : '');
+        return {
+          cities:    Array.isArray(a.cities) ? a.cities.join(' · ') : (a.cities ?? a.data ?? ''),
+          time:      a.time  ?? '',
+          date:      a.date  ?? '',
+          alertDate,
+          title:     a.threat ?? a.title ?? '',
+          category:  '',
+        };
+      });
+
+      const active = alerts.some(a => isRecent(a.alertDate));
+      console.log(`[RedAlert] Source: tzevaadom — ${alerts.length} alerts, active=${active}`);
+
+      return NextResponse.json(
+        { active, alerts, last_checked: new Date().toISOString(), source: 'tzevaadom' },
+        { headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+    console.log(`[RedAlert] tzevaadom returned HTTP ${res.status}`);
+  } catch (err) {
+    console.log(`[RedAlert] tzevaadom failed (${(err as Error).message})`);
+  }
+
+  console.log('[RedAlert] All sources failed — returning empty');
+  return NextResponse.json(
+    { active: false, alerts: [], last_checked: new Date().toISOString(), source: 'all_sources_failed' },
+    { headers: { 'Cache-Control': 'no-store' } }
+  );
 }

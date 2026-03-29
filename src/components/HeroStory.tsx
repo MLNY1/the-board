@@ -2,11 +2,12 @@
 
 /**
  * Full-screen hero story — the centerpiece of TheBoard.
- * Breaking: amber gradient left-border, large Newsreader headline.
- * Major:    blue-grey gradient left-border, slightly smaller headline.
- * Font sizes use clamp() for graceful 1080p→4K scaling.
+ * 52px Georgia headline (breaking), 36px (major). Soft weight 500.
+ * Outlined tier badge. Optional image thumbnail top-right.
+ * NEW badge fades out after 5 seconds via CSS animation.
  */
 
+import { useState } from 'react';
 import type { DigestStoryItem } from '@/types';
 
 interface HeroStoryProps {
@@ -24,105 +25,125 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function HeroStory({ story, isNew = false, isShabbosMode }: HeroStoryProps) {
-  const isBreaking = story.tier === 'breaking';
-  const accentVar   = isBreaking ? 'var(--accent-breaking)'     : 'var(--accent-major)';
-  const glowVar     = isBreaking ? 'var(--accent-breaking-glow)' : 'var(--accent-major-glow)';
+export default function HeroStory({ story, isNew = false }: HeroStoryProps) {
+  const [imgHidden, setImgHidden] = useState(false);
+
+  const isBreaking     = story.tier === 'breaking';
+  const accentColor    = isBreaking ? 'var(--accent-amber)' : 'var(--accent-major)';
+  const accentSoft     = isBreaking ? 'var(--accent-amber-soft)' : 'var(--accent-major-soft)';
+  const borderColor    = isBreaking ? 'var(--accent-amber)' : 'var(--accent-major)';
+  const bgGradient     = isBreaking
+    ? 'linear-gradient(135deg, var(--accent-amber-glow) 0%, transparent 60%)'
+    : 'linear-gradient(135deg, rgba(143,167,191,0.03) 0%, transparent 60%)';
+  const headlineSizePx = isBreaking ? '52px' : '36px';
+
+  const showImage = !!story.image_url && !imgHidden;
 
   return (
-    <div
-      className={`hero-card ${isBreaking ? 'hero-card-breaking' : 'hero-card-major'} flex flex-col justify-center flex-1 min-h-0 rounded-lg`}
-      style={{
-        backgroundColor: 'var(--bg-card)',
-        border: '1px solid var(--border-card)',
-        /* Subtle glow from the accent color in the bottom-left corner */
-        background: `radial-gradient(ellipse 60% 50% at 0% 100%, ${glowVar} 0%, var(--bg-card) 60%)`,
-        paddingTop:    'clamp(1.5rem, 3vh, 2.5rem)',
-        paddingBottom: 'clamp(1.5rem, 3vh, 2.5rem)',
-        paddingRight:  'clamp(2rem, 4vw, 4rem)',
-      }}
-    >
-      {/* ── Tier badge + NEW badge ── */}
-      <div className="flex items-center gap-3 mb-5">
-        <span
-          className="font-sans font-bold uppercase tracking-widest"
-          style={{
-            fontSize: '0.6875rem',
-            letterSpacing: '0.15em',
-            color: 'var(--bg-primary)',
-            backgroundColor: accentVar,
-            padding: '4px 10px',
-            borderRadius: '3px',
-          }}
-        >
-          {isBreaking ? 'Breaking' : 'Major'}
-        </span>
-
-        {isNew && (
-          <span
-            className="new-badge font-sans font-bold uppercase"
+    <div style={{ padding: '24px 28px 16px' }}>
+      <div style={{
+        borderLeft: `3px solid ${borderColor}`,
+        padding: '28px 32px',
+        background: bgGradient,
+        borderRadius: '0 10px 10px 0',
+        position: 'relative',
+      }}>
+        {/* Image thumbnail — top-right, float-style via flex */}
+        {showImage && (
+          <img
+            src={story.image_url!}
+            alt=""
+            onError={() => setImgHidden(true)}
             style={{
-              fontSize: '0.6875rem',
-              letterSpacing: '0.15em',
-              color: 'var(--accent-breaking)',
-              backgroundColor: 'var(--accent-breaking-glow)',
-              border: '1px solid var(--accent-breaking)',
-              padding: '3px 10px',
-              borderRadius: '3px',
+              float: 'right',
+              marginLeft: '20px',
+              marginBottom: '8px',
+              width: '160px',
+              height: '100px',
+              objectFit: 'cover',
+              borderRadius: '8px',
+              opacity: 0.7,
+              flexShrink: 0,
             }}
-          >
-            New
-          </span>
+          />
         )}
-      </div>
 
-      {/* ── Headline ── */}
-      <h1
-        className="font-serif font-bold leading-tight mb-5"
-        style={{
-          fontSize: isBreaking
-            ? 'clamp(2.5rem, 3.75vw, 3.5rem)'   /* 40px → 56px */
-            : 'clamp(2rem,   3vw,   2.75rem)',    /* 32px → 44px */
-          color: 'var(--text-primary)',
-          lineHeight: 1.1,
-          maxWidth: '90%',
-          fontStyle: 'normal',
-        }}
-      >
-        {story.headline}
-      </h1>
+        {/* Badge row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+          <span style={{
+            fontFamily: 'var(--font-body)',
+            fontSize: '10px',
+            letterSpacing: '2px',
+            textTransform: 'uppercase',
+            color: accentColor,
+            border: `1px solid ${accentSoft}`,
+            padding: '3px 12px',
+            borderRadius: '4px',
+            background: 'transparent',
+          }}>
+            {isBreaking ? 'Breaking' : 'Major'}
+          </span>
 
-      {/* ── Summary ── */}
-      <p
-        className="font-sans leading-relaxed mb-7"
-        style={{
-          fontSize: 'clamp(1.125rem, 1.5vw, 1.375rem)', /* 18px → 22px */
-          color: 'var(--text-secondary)',
-          maxWidth: 'min(820px, 85%)',
-          lineHeight: 1.55,
-        }}
-      >
-        {story.summary}
-      </p>
-
-      {/* ── Sources + time ── */}
-      <div className="flex items-center gap-3 font-sans flex-wrap">
-        {story.sources.slice(0, 3).map((src, i) => (
-          <span key={src} className="flex items-center gap-3">
-            {i > 0 && (
-              <span style={{ color: 'var(--text-dim)', fontSize: '0.75rem' }}>·</span>
-            )}
-            <span style={{ fontSize: '0.9375rem', color: accentVar, fontWeight: 500 }}>
-              {src}
+          {isNew && (
+            <span style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: '10px',
+              letterSpacing: '2px',
+              textTransform: 'uppercase',
+              color: 'var(--accent-amber)',
+              border: '1px solid var(--accent-amber-soft)',
+              padding: '2px 10px',
+              borderRadius: '4px',
+              background: 'transparent',
+              animation: 'fadeNewBadge 5s ease-in-out forwards',
+            }}>
+              New
             </span>
-          </span>
-        ))}
-        {story.sources.length > 0 && (
-          <span style={{ color: 'var(--text-dim)', fontSize: '0.75rem' }}>•</span>
-        )}
-        <span style={{ fontSize: '0.9375rem', color: 'var(--text-secondary)' }}>
+          )}
+        </div>
+
+        {/* Headline */}
+        <h1 style={{
+          fontFamily: 'var(--font-headline)',
+          fontSize: headlineSizePx,
+          fontWeight: 500,
+          lineHeight: 1.12,
+          color: 'var(--text-primary)',
+          marginBottom: '14px',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        } as React.CSSProperties}>
+          {story.headline}
+        </h1>
+
+        {/* Summary */}
+        <p style={{
+          fontFamily: 'var(--font-body)',
+          fontSize: '22px',
+          lineHeight: 1.55,
+          color: 'var(--text-body)',
+          maxWidth: '750px',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        } as React.CSSProperties}>
+          {story.summary}
+        </p>
+
+        {/* Source + time */}
+        <div style={{
+          marginTop: '14px',
+          fontFamily: 'var(--font-body)',
+          fontSize: '18px',
+          color: 'var(--text-muted)',
+        }}>
+          {story.sources.slice(0, 3).join(' · ')}
+          {story.sources.length > 0 && ' · '}
           {formatRelativeTime(story.published_at)}
-        </span>
+        </div>
       </div>
     </div>
   );

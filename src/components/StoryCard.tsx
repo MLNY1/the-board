@@ -1,8 +1,9 @@
 'use client';
 
 /**
- * Compact secondary story card — shown in the two-up grid below the hero.
- * Designed to be readable from across a room at ~28-32px headline.
+ * Compact secondary story card — shown 1-2 at a time below the hero.
+ * 28px Georgia headline (weight 500), 18px summary, 16px source.
+ * Outlined badge. No image.
  */
 
 import type { DigestStoryItem } from '@/types';
@@ -24,86 +25,87 @@ function formatRelativeTime(iso: string): string {
 export default function StoryCard({ story }: StoryCardProps) {
   const isBreaking = story.tier === 'breaking';
   const isMajor    = story.tier === 'major';
-  const hasAccent  = isBreaking || isMajor;
 
-  const accentVar = isBreaking
-    ? 'var(--accent-breaking)'
-    : isMajor
-    ? 'var(--accent-major)'
-    : 'var(--accent-notable)';
+  const accentColor = isBreaking ? 'var(--accent-amber)'
+    : isMajor ? 'var(--accent-major)'
+    : 'var(--text-muted)';
 
-  const badgeBg = isBreaking
-    ? 'var(--accent-breaking-glow)'
-    : isMajor
-    ? 'var(--accent-major-glow)'
-    : 'rgba(82,82,90,0.15)';
+  const accentBorder = isBreaking ? 'var(--accent-amber-soft)'
+    : isMajor ? 'var(--accent-major-soft)'
+    : 'rgba(107,98,86,0.3)';
 
   return (
-    <div
-      className="flex flex-col justify-between h-full rounded-lg overflow-hidden"
-      style={{
-        backgroundColor: 'var(--bg-card)',
-        border: '1px solid var(--border-card)',
-        padding: 'clamp(1rem, 1.5vw, 1.5rem)',
-      }}
-    >
-      {/* ── Tier badge ── */}
-      <div className="mb-3">
-        <span
-          className="font-sans font-bold uppercase"
-          style={{
-            fontSize: '0.625rem',
-            letterSpacing: '0.14em',
-            color: hasAccent ? accentVar : 'var(--text-dim)',
-            backgroundColor: badgeBg,
-            padding: '3px 8px',
-            borderRadius: '2px',
-          }}
-        >
+    <div style={{
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border-card)',
+      borderRadius: '10px',
+      padding: '18px 20px',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+    }}>
+      {/* Tier badge */}
+      <div style={{ marginBottom: '8px' }}>
+        <span style={{
+          fontFamily: 'var(--font-body)',
+          fontSize: '9px',
+          letterSpacing: '1.5px',
+          textTransform: 'uppercase',
+          color: accentColor,
+          border: `1px solid ${accentBorder}`,
+          padding: '2px 8px',
+          borderRadius: '3px',
+          background: 'transparent',
+        }}>
           {story.tier}
         </span>
       </div>
 
-      {/* ── Headline ── */}
-      <h2
-        className="font-serif font-bold line-clamp-3 flex-1"
-        style={{
-          fontSize: 'clamp(1.25rem, 1.75vw, 1.75rem)', /* 20px → 28px */
-          color: 'var(--text-primary)',
-          lineHeight: 1.25,
-          marginBottom: '0.625rem',
-        }}
-      >
+      {/* Headline (max 2 lines) */}
+      <h2 style={{
+        fontFamily: 'var(--font-headline)',
+        fontSize: '28px',
+        fontWeight: 500,
+        lineHeight: 1.2,
+        color: 'var(--text-primary)',
+        marginBottom: '8px',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+        flex: 1,
+      } as React.CSSProperties}>
         {story.headline}
       </h2>
 
-      {/* ── Summary ── */}
-      <p
-        className="font-sans line-clamp-2"
-        style={{
-          fontSize: 'clamp(0.875rem, 1vw, 1rem)',
-          color: 'var(--text-secondary)',
-          lineHeight: 1.5,
-          marginBottom: '0.875rem',
-        }}
-      >
+      {/* Summary (max 2 lines) */}
+      <p style={{
+        fontFamily: 'var(--font-body)',
+        fontSize: '18px',
+        lineHeight: 1.45,
+        color: 'var(--text-body)',
+        marginBottom: '10px',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+      } as React.CSSProperties}>
         {story.summary}
       </p>
 
-      {/* ── Metadata ── */}
-      <div className="flex items-center justify-between font-sans">
-        <span
-          className="truncate"
-          style={{
-            fontSize: '0.8125rem',
-            color: hasAccent ? accentVar : 'var(--text-secondary)',
-            fontWeight: hasAccent ? 500 : 400,
-            maxWidth: '65%',
-          }}
-        >
+      {/* Source + time */}
+      <div style={{
+        fontFamily: 'var(--font-body)',
+        fontSize: '16px',
+        color: 'var(--text-muted)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        marginTop: 'auto',
+      }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>
           {story.sources[0] ?? ''}
         </span>
-        <span style={{ fontSize: '0.8125rem', color: 'var(--text-dim)' }}>
+        <span style={{ flexShrink: 0 }}>
           {formatRelativeTime(story.published_at)}
         </span>
       </div>

@@ -5,64 +5,48 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------------
-   Color tokens — applied via data-shabbos attribute on the root wrapper.
-   Weekday = default dark (Bloomberg terminal).
-   Shabbos = warmer, dimmer (candlelight warmth).
+   Color tokens — warm & passive palette
    --------------------------------------------------------------------------- */
 
 :root {
   /* Backgrounds */
-  --bg-primary:      #0a0a0f;
-  --bg-secondary:    #0e0e15;
-  --bg-card:         #141419;
-  --bg-card-raised:  #18181f;
+  --bg-primary:    #0f0c08;
+  --bg-card:       #1a1610;
+  --bg-card-glow:  rgba(212, 162, 78, 0.03);
+  --border-card:   #2a2418;
+  --border-subtle: #1e1a14;
 
   /* Text */
-  --text-primary:    #e8e4de;
-  --text-secondary:  #8a8680;
-  --text-dim:        #4a4a52;
+  --text-primary:   #e8e4de;
+  --text-body:      #a89e8e;
+  --text-secondary: #8a7e6a;
+  --text-muted:     #6b6256;
+  --text-dim:       #5a5448;
 
   /* Accents */
-  --accent-breaking:     #d4a24e;
-  --accent-breaking-glow: rgba(212, 162, 78, 0.12);
-  --accent-major:        #6b8cae;
-  --accent-major-glow:   rgba(107, 140, 174, 0.10);
-  --accent-notable:      #52525a;
+  --accent-amber:      #d4a24e;
+  --accent-amber-soft: rgba(212, 162, 78, 0.35);
+  --accent-amber-glow: rgba(212, 162, 78, 0.04);
+  --accent-major:      #8fa7bf;
+  --accent-major-soft: rgba(143, 167, 191, 0.25);
+  --accent-red:        #c0392b;
+  --accent-red-dim:    #9a3a30;
+  --accent-green:      #4a7c5c;
 
-  /* Borders */
-  --border-subtle:  #1e1e26;
-  --border-card:    #22222c;
-
-  /* Page vignette — very subtle radial from top */
-  --vignette-color: rgba(212, 162, 78, 0.04);
-
-  /* Font stacks (populated by next/font CSS variables) */
-  --font-serif: var(--font-newsreader), Georgia, 'Times New Roman', serif;
-  --font-sans:  var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono:  ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
+  /* Fonts — system only, zero load time */
+  --font-headline: Georgia, 'Times New Roman', serif;
+  --font-body:     -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:     'Courier New', monospace;
 }
 
-/* Shabbos mode — warmer, dimmer, candlelight palette */
-[data-shabbos='true'] {
-  --bg-primary:      #0d0a07;
-  --bg-secondary:    #110d09;
-  --bg-card:         #130e09;
-  --bg-card-raised:  #181008;
-
-  --text-primary:    #d4cfc8;
-  --text-secondary:  #8a8070;
-  --text-dim:        #48423a;
-
-  --accent-breaking:     #c4922e;
-  --accent-breaking-glow: rgba(196, 146, 46, 0.14);
-  --accent-major:        #5a7a9a;
-  --accent-major-glow:   rgba(90, 122, 154, 0.10);
-  --accent-notable:      #4a4238;
-
-  --border-subtle:  #2a2015;
-  --border-card:    #2e2218;
-
-  --vignette-color: rgba(196, 146, 46, 0.06);
+/* Shabbos mode — candlelight shift */
+.shabbos-mode {
+  --bg-primary:  #0d0a07;
+  --bg-card:     #17140f;
+  --text-primary: #d4cfc5;
+  --text-body:   #9a9080;
+  --accent-amber: #c49030;
+  --border-card: #252018;
 }
 
 /* ---------------------------------------------------------------------------
@@ -81,13 +65,11 @@ html,
 body {
   height: 100%;
   overflow: hidden;
-  background-color: var(--bg-primary);
+  background: var(--bg-primary);
   color: var(--text-primary);
-  font-family: var(--font-sans);
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-  font-feature-settings: 'kern' 1, 'liga' 1;
   user-select: none;
   cursor: default;
   overscroll-behavior: none;
@@ -95,74 +77,86 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
-   Page-level background — subtle radial vignette from top center.
-   Gives the screen visual depth so it doesn't look like a dead monitor.
+   Page layout — responsive 2-column grid
    --------------------------------------------------------------------------- */
 
-.board-root {
-  position: relative;
-  background-color: var(--bg-primary);
+.page-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  height: 100vh;
+  overflow: hidden;
+  background: #0f0c08;
 }
 
-.board-root::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 80% 40% at 50% 0%, var(--vignette-color) 0%, transparent 100%);
-  pointer-events: none;
-  z-index: 0;
+.alert-sidebar {
+  display: none;
 }
 
-.board-root > * {
-  position: relative;
-  z-index: 1;
+@media (min-width: 1024px) {
+  .page-grid {
+    grid-template-columns: 1fr 280px;
+  }
+
+  .alert-sidebar {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
 }
 
 /* ---------------------------------------------------------------------------
-   Keyframe animations
+   Story fade transition (800ms ease-in-out)
    --------------------------------------------------------------------------- */
 
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1;   transform: scale(1);   }
-  50%       { opacity: 0.3; transform: scale(0.75); }
+.story-fade {
+  transition: opacity 800ms ease-in-out;
 }
 
-@keyframes fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+/* ---------------------------------------------------------------------------
+   Overview panel slide-up entrance (600ms)
+   --------------------------------------------------------------------------- */
+
+.animate-slide-up {
+  animation: slideUp 600ms ease-out both;
 }
 
-@keyframes slide-up {
-  from { opacity: 0; transform: translateY(14px); }
-  to   { opacity: 1; transform: translateY(0);    }
+/* ---------------------------------------------------------------------------
+   Shabbos mode header gradient override
+   --------------------------------------------------------------------------- */
+
+.shabbos-mode .shabbos-header {
+  background: linear-gradient(180deg, rgba(140, 90, 30, 0.07) 0%, transparent 100%) !important;
 }
 
-@keyframes new-badge-pulse {
+/* ---------------------------------------------------------------------------
+   Keyframes
+   --------------------------------------------------------------------------- */
+
+@keyframes greenPulse {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.6; }
+  50%       { opacity: 0.4; }
 }
 
-/* Red alert banner — subtle opacity pulse, not aggressive */
-@keyframes alert-banner-pulse {
-  0%, 100% { opacity: 1;    }
-  50%       { opacity: 0.88; }
+@keyframes redPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
 }
 
-.alert-banner-pulse {
-  animation: alert-banner-pulse 3s ease-in-out infinite;
+@keyframes redPulseFast {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.15; }
 }
 
-/* ---------------------------------------------------------------------------
-   Typography helpers
-   --------------------------------------------------------------------------- */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
 
-.font-serif { font-family: var(--font-serif); }
-.font-sans  { font-family: var(--font-sans);  }
-.font-mono  { font-family: var(--font-mono);  }
-
-/* Editorial number treatment — tabular figures in headlines */
-.tabular-nums { font-variant-numeric: tabular-nums; }
+@keyframes fadeNewBadge {
+  0%   { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
+}
 
 /* ---------------------------------------------------------------------------
    Line-clamp utilities
@@ -180,94 +174,7 @@ body {
 .line-clamp-3 { -webkit-line-clamp: 3; }
 
 /* ---------------------------------------------------------------------------
-   Component: Hero story left-border accent
-   Uses pseudo-element for a gradient border effect (Tailwind can't do this).
-   Apply .hero-accent-breaking or .hero-accent-major to the hero card div.
+   Scrollbar — hidden everywhere
    --------------------------------------------------------------------------- */
 
-.hero-card {
-  position: relative;
-  padding-left: 2.5rem; /* 40px — extra left padding to clear the border */
-}
-
-.hero-card::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 5px;
-  border-radius: 5px 0 0 5px;
-}
-
-.hero-card-breaking::before {
-  background: linear-gradient(
-    to bottom,
-    var(--accent-breaking) 0%,
-    rgba(212, 162, 78, 0.3) 100%
-  );
-}
-
-.hero-card-major::before {
-  background: linear-gradient(
-    to bottom,
-    var(--accent-major) 0%,
-    rgba(107, 140, 174, 0.25) 100%
-  );
-}
-
-/* Shabbos overrides for the gradient borders */
-[data-shabbos='true'] .hero-card-breaking::before {
-  background: linear-gradient(
-    to bottom,
-    var(--accent-breaking) 0%,
-    rgba(196, 146, 46, 0.25) 100%
-  );
-}
-
-[data-shabbos='true'] .hero-card-major::before {
-  background: linear-gradient(
-    to bottom,
-    var(--accent-major) 0%,
-    rgba(90, 122, 154, 0.2) 100%
-  );
-}
-
-/* ---------------------------------------------------------------------------
-   Component: Live indicator dot
-   --------------------------------------------------------------------------- */
-
-.live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background-color: #4ade80; /* green-400 */
-  animation: pulse-dot 2.5s ease-in-out infinite;
-  display: inline-block;
-  flex-shrink: 0;
-}
-
-.offline-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background-color: #d4a24e;
-  display: inline-block;
-  flex-shrink: 0;
-}
-
-/* ---------------------------------------------------------------------------
-   Component: NEW badge pulse
-   --------------------------------------------------------------------------- */
-
-.new-badge {
-  animation: new-badge-pulse 1.8s ease-in-out infinite;
-}
-
-/* ---------------------------------------------------------------------------
-   Scrollbar (hidden but functional for potential overflow)
-   --------------------------------------------------------------------------- */
-
-::-webkit-scrollbar       { width: 3px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 2px; }
+::-webkit-scrollbar { width: 0; height: 0; }
