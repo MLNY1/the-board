@@ -272,6 +272,17 @@ export async function GET(req: NextRequest) {
 
   try {
     // -----------------------------------------------------------------------
+    // Step 0: Prune digest_stories older than 48h (stale duplicates accumulate)
+    // -----------------------------------------------------------------------
+    const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const { error: digestPruneError } = await supabase
+      .from('digest_stories')
+      .delete()
+      .lt('created_at', cutoff48h);
+    if (digestPruneError) log.push(`Digest prune error: ${digestPruneError.message}`);
+    else log.push('Pruned digest_stories > 48h');
+
+    // -----------------------------------------------------------------------
     // Step 1: Fetch articles from all sources
     // -----------------------------------------------------------------------
     const category = getCurrentCategory();
@@ -364,11 +375,53 @@ export async function GET(req: NextRequest) {
       }
       if (boostedCount > 0) log.push(`Israel boost applied to ${boostedCount} stories`);
 
+      // ── Post-processing dedup ─────────────────────────────────────────────
+      // Pass 1: group by topic_slug — keep only the highest-scored per topic.
+      const topicMap = new Map<string, ClaudeStory>();
+      for (const story of stories) {
+        const key      = story.topic_slug || story.headline.slice(0, 40).toLowerCase();
+        const existing = topicMap.get(key);
+        if (!existing || story.importance_score > existing.importance_score) {
+          topicMap.set(key, story);
+        }
+      }
+
+      // Pass 2: pairwise headline word-overlap check (≥50% = duplicate).
+      const pass2Input  = Array.from(topicMap.values());
+      const finalStories: ClaudeStory[] = [];
+      for (const story of pass2Input) {
+        const words = new Set(
+          story.headline.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean)
+        );
+        let isDup  = false;
+        let dupIdx = -1;
+        for (let i = 0; i < finalStories.length; i++) {
+          const keptWords = new Set(
+            finalStories[i].headline.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean)
+          );
+          const intersection = Array.from(words).filter(w => keptWords.has(w)).length;
+          const union        = new Set([...Array.from(words), ...Array.from(keptWords)]).size;
+          if (union > 0 && intersection / union >= 0.5) {
+            isDup  = true;
+            dupIdx = i;
+            break;
+          }
+        }
+        if (!isDup) {
+          finalStories.push(story);
+        } else if (story.importance_score > finalStories[dupIdx].importance_score) {
+          finalStories[dupIdx] = story; // replace with higher-scored version
+        }
+      }
+
+      const removedCount = stories.length - finalStories.length;
+      if (removedCount > 0) log.push(`[Dedup] Removed ${removedCount} duplicate stories`);
+
       // Build a lookup: article_id → source info
       const articleLookup = new Map(toProcess.map((a) => [a.id, a]));
 
-      if (stories.length > 0) {
-        const digestRows = stories.map((story) => {
+      if (finalStories.length > 0) {
+        const digestRows = finalStories.map((story) => {
           const sourceArticles = story.article_ids
             .map((id) => articleLookup.get(id))
             .filter(Boolean) as typeof toProcess;
@@ -407,7 +460,7 @@ export async function GET(req: NextRequest) {
         if (digestError) {
           log.push(`Digest insert error: ${digestError.message}`);
         } else {
-          log.push(`Inserted ${digestRows.length} digest stories`);
+          log.push(`Inserted ${digestRows.length} digest stories (${stories.length} before dedup)`);
         }
       }
 

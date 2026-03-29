@@ -1,13 +1,11 @@
 /**
  * News deduplication and title normalization utilities.
  *
- * Deduplication strategy:
- *  1. Normalize title → lowercase, strip punctuation, take first 12 words.
- *  2. Compare against recent articles using Jaccard similarity on word sets.
- *  3. If similarity > 0.7, mark the incoming article as a duplicate.
- *
- * This is intentionally simple and cheap — no embeddings, no external API calls.
- * It runs inside the ingest cron route on every batch.
+ * Deduplication strategy (three layers):
+ *  1. Normalize title → lowercase, strip punctuation, take first 6 words.
+ *  2. Jaccard similarity on word sets — threshold 0.5 (50% overlap = duplicate).
+ *  3. Key-noun check — if 3+ proper nouns/numbers/country names match, flag as
+ *     duplicate even if Jaccard is below threshold.
  */
 
 import type { RawArticle } from '@/types';
@@ -18,22 +16,23 @@ import type { RawArticle } from '@/types';
 
 /**
  * Normalizes a news headline for deduplication comparison.
- * Lowercases, strips all punctuation, and takes the first 12 words.
+ * Lowercases, strips punctuation, takes the first 6 words.
+ * Using 6 words is intentionally tight — headlines that share their opening
+ * 6 words almost always describe the same story.
  */
 export function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
-    .replace(/[^\w\s]/g, '') // strip punctuation
-    .replace(/\s+/g, ' ')   // collapse whitespace
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
     .trim()
     .split(' ')
-    .slice(0, 12)
+    .slice(0, 6)
     .join(' ');
 }
 
 /**
  * Converts a normalized title string into a Set of unique words.
- * Used as the input to Jaccard similarity.
  */
 export function titleToWordSet(normalizedTitle: string): Set<string> {
   return new Set(normalizedTitle.split(' ').filter(Boolean));
@@ -43,20 +42,65 @@ export function titleToWordSet(normalizedTitle: string): Set<string> {
 // Jaccard similarity
 // ---------------------------------------------------------------------------
 
-/**
- * Computes Jaccard similarity between two word sets.
- * Returns a value between 0.0 (no overlap) and 1.0 (identical sets).
- *
- * Jaccard = |intersection| / |union|
- */
 export function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 && b.size === 0) return 1.0;
   if (a.size === 0 || b.size === 0) return 0.0;
 
   const intersection = new Set(Array.from(a).filter((word) => b.has(word)));
-  const union = new Set([...Array.from(a), ...Array.from(b)]);
+  const union        = new Set([...Array.from(a), ...Array.from(b)]);
 
   return intersection.size / union.size;
+}
+
+// ---------------------------------------------------------------------------
+// Key-noun extraction (secondary dedup signal)
+// ---------------------------------------------------------------------------
+
+const ENTITY_WORDS = new Set([
+  'israel', 'israeli', 'iran', 'iranian', 'usa', 'america', 'american',
+  'china', 'chinese', 'russia', 'russian', 'ukraine', 'ukrainian', 'gaza',
+  'taiwan', 'india', 'indian', 'pakistan', 'korea', 'korean', 'japan', 'japanese',
+  'germany', 'german', 'france', 'french', 'britain', 'british', 'uk', 'european',
+  'nato', 'un', 'eu', 'saudi', 'turkey', 'turkish', 'syria', 'syrian',
+  'iraq', 'iraqi', 'afghanistan', 'lebanon', 'lebanese', 'egypt', 'egyptian',
+  'hamas', 'hezbollah', 'houthi', 'idf', 'pentagon', 'congress', 'senate',
+  'white', 'house', 'kremlin', 'biden', 'trump', 'netanyahu', 'putin',
+  'beijing', 'moscow', 'washington', 'jerusalem', 'tehran',
+]);
+
+/**
+ * Extracts key nouns from the original (un-normalized) title:
+ * - Capitalized words (proper nouns, excluding the first word which is always capitalized)
+ * - Numeric tokens
+ * - Known entity/country names
+ */
+export function extractKeyNouns(title: string): Set<string> {
+  const nouns    = new Set<string>();
+  const words    = title.trim().split(/\s+/);
+
+  words.forEach((word, i) => {
+    const clean = word.replace(/[^\w]/g, '').toLowerCase();
+    if (clean.length < 2) return;
+
+    // Numbers
+    if (/^\d/.test(clean)) {
+      nouns.add(clean);
+      return;
+    }
+
+    // Known entities
+    if (ENTITY_WORDS.has(clean)) {
+      nouns.add(clean);
+      return;
+    }
+
+    // Capitalized mid-sentence = proper noun (skip index 0, always capital)
+    if (i > 0 && /^[A-Z]/.test(word)) {
+      nouns.add(clean);
+    }
+  });
+
+  return nouns;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,9 +108,7 @@ export function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
 // ---------------------------------------------------------------------------
 
 export interface DeduplicationResult {
-  /** Articles that are not duplicates — safe to insert */
   unique: Array<Omit<RawArticle, 'id' | 'fetched_at' | 'created_at' | 'processed'>>;
-  /** Articles identified as duplicates, with the ID they duplicate */
   duplicates: Array<{
     article: Omit<RawArticle, 'id' | 'fetched_at' | 'created_at' | 'processed'>;
     duplicate_of: string;
@@ -74,11 +116,11 @@ export interface DeduplicationResult {
 }
 
 /**
- * Deduplicates a batch of incoming articles against a set of recently stored articles.
+ * Deduplicates a batch of incoming articles against recently stored articles.
  *
- * @param incoming   New articles to classify (no DB id yet)
- * @param existing   Articles from the DB fetched in the last 24h (have real ids)
- * @param threshold  Jaccard similarity threshold (default 0.7)
+ * Three-layer check (any hit = duplicate):
+ *   1. Jaccard on first-6-word sets   ≥ threshold (default 0.5)
+ *   2. Shared key nouns               ≥ 3
  */
 export function deduplicateArticles(
   incoming: Array<{
@@ -93,43 +135,37 @@ export function deduplicateArticles(
     duplicate_of: string | null;
   }>,
   existing: Pick<RawArticle, 'id' | 'title'>[],
-  threshold = 0.7
+  threshold = 0.5
 ): DeduplicationResult {
   const result: DeduplicationResult = { unique: [], duplicates: [] };
 
-  // Pre-compute normalized word sets for all existing articles
-  const existingWordSets: Array<{ id: string; wordSet: Set<string> }> = existing.map((a) => ({
-    id: a.id,
-    wordSet: titleToWordSet(normalizeTitle(a.title)),
+  const existingSets = existing.map((a) => ({
+    id:       a.id,
+    wordSet:  titleToWordSet(normalizeTitle(a.title)),
+    keyNouns: extractKeyNouns(a.title),
   }));
 
-  // Track newly-added unique articles so we can deduplicate within the batch itself
-  const newWordSets: Array<{ idx: number; wordSet: Set<string> }> = [];
+  const newSets: Array<{ idx: number; wordSet: Set<string>; keyNouns: Set<string> }> = [];
 
   for (const article of incoming) {
-    const normalizedIncoming = normalizeTitle(article.title);
-    const incomingWordSet = titleToWordSet(normalizedIncoming);
+    const wordSet  = titleToWordSet(normalizeTitle(article.title));
+    const keyNouns = extractKeyNouns(article.title);
 
-    // Check against existing DB articles
     let duplicateId: string | null = null;
 
-    for (const { id, wordSet } of existingWordSets) {
-      if (jaccardSimilarity(incomingWordSet, wordSet) >= threshold) {
-        duplicateId = id;
-        break;
-      }
+    // Check against DB articles
+    for (const { id, wordSet: eWS, keyNouns: eKN } of existingSets) {
+      if (jaccardSimilarity(wordSet, eWS) >= threshold) { duplicateId = id; break; }
+      const shared = Array.from(keyNouns).filter(n => eKN.has(n)).length;
+      if (shared >= 3)                                   { duplicateId = id; break; }
     }
 
-    // If not a DB duplicate, check within this same incoming batch
+    // Check within this batch
     if (!duplicateId) {
-      for (const { idx, wordSet } of newWordSets) {
-        if (jaccardSimilarity(incomingWordSet, wordSet) >= threshold) {
-          // Mark as duplicate of the first unique article in this batch
-          // We can't use an ID yet (it's not inserted), so we skip it from the duplicate list
-          // and just don't add it to unique. Treat as a within-batch duplicate.
-          duplicateId = `batch-${idx}`; // placeholder; we'll handle below
-          break;
-        }
+      for (const { idx, wordSet: nWS, keyNouns: nKN } of newSets) {
+        if (jaccardSimilarity(wordSet, nWS) >= threshold) { duplicateId = `batch-${idx}`; break; }
+        const shared = Array.from(keyNouns).filter(n => nKN.has(n)).length;
+        if (shared >= 3)                                   { duplicateId = `batch-${idx}`; break; }
       }
     }
 
@@ -137,55 +173,37 @@ export function deduplicateArticles(
       result.duplicates.push({ article, duplicate_of: duplicateId });
     } else if (!duplicateId) {
       result.unique.push(article);
-      newWordSets.push({ idx: result.unique.length - 1, wordSet: incomingWordSet });
+      newSets.push({ idx: result.unique.length - 1, wordSet, keyNouns });
     }
-    // Within-batch duplicates are silently dropped (not inserted at all)
+    // Within-batch duplicates are silently dropped
   }
 
   return result;
 }
 
 // ---------------------------------------------------------------------------
-// Category rotation for NewsAPI (stays within free 100 req/day limit)
+// Category rotation for NewsAPI
 // ---------------------------------------------------------------------------
 
 const NEWS_CATEGORIES = [
-  'general',
-  'world',
-  'business',
-  'technology',
-  'science',
-  'health',
-  'politics', // NewsAPI uses 'general' for politics, but we'll map this
+  'general', 'world', 'business', 'technology', 'science', 'health', 'politics',
 ] as const;
 
 export type NewsCategory = (typeof NEWS_CATEGORIES)[number];
 
-/**
- * Returns which NewsAPI category to fetch for the current cron run.
- * Uses the current hour mod the number of categories so each run fetches
- * a different category, rotating through all of them over the day.
- * This keeps us well within the 100 req/day free tier limit.
- */
 export function getCurrentCategory(): string {
   const hour = new Date().getUTCHours();
-  // Map 'politics' → 'general' since NewsAPI doesn't have a politics category
-  const cat = NEWS_CATEGORIES[hour % NEWS_CATEGORIES.length];
+  const cat  = NEWS_CATEGORIES[hour % NEWS_CATEGORIES.length];
   return cat === 'politics' ? 'general' : cat;
 }
 
 // ---------------------------------------------------------------------------
-// Source URL normalization (strip UTM params, anchors, etc.)
+// Source URL normalization
 // ---------------------------------------------------------------------------
 
-/**
- * Strips tracking parameters and anchors from a URL for cleaner storage.
- * Returns the original URL if parsing fails.
- */
 export function normalizeSourceUrl(url: string): string {
   try {
-    const parsed = new URL(url);
-    // Remove common tracking parameters
+    const parsed      = new URL(url);
     const trackingParams = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'ref', 'cid'];
     trackingParams.forEach((p) => parsed.searchParams.delete(p));
     parsed.hash = '';
