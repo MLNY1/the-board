@@ -11,12 +11,27 @@
 import { useEffect, useRef, useState } from 'react';
 
 interface AlertItem {
-  cities:    string;
+  cities_he: string;
+  cities_en: string;
   time:      string;
   date:      string;
   alertDate: string;
   title:     string;
   category:  string;
+}
+
+const PRIORITY_CITIES = ['Caesarea', 'Hadera', 'קיסריה', 'חדרה'];
+
+function isPriority(alert: AlertItem): boolean {
+  const combined = `${alert.cities_he} ${alert.cities_en}`;
+  return PRIORITY_CITIES.some(c => combined.includes(c));
+}
+
+function formatLocalTime(alertDate: string): string {
+  if (!alertDate) return '';
+  try {
+    return new Date(alertDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch { return ''; }
 }
 
 interface AlertData {
@@ -155,17 +170,22 @@ export default function RedAlertSidebar() {
         ) : (
           /* Always render all alerts — visual dimming when inactive */
           alerts.map((alert, i) => {
-            const recent       = isRecent(alert.alertDate);
-            const threatColor  = recent ? '#c0392b' : '#9a3a30';
-            const cityColor    = recent ? '#d4c4b4' : '#a89888';
+            const recent      = isRecent(alert.alertDate);
+            const priority    = isPriority(alert);
+            const threatColor = recent ? '#c0392b' : '#9a3a30';
+            const bgColor     = priority
+              ? 'rgba(180,40,30,0.12)'
+              : recent ? 'rgba(180,40,30,0.06)' : 'transparent';
+            const enColor     = recent || priority ? 'var(--text-primary)' : '#a89888';
+            const hasEn       = alert.cities_en && alert.cities_en !== alert.cities_he;
 
             return (
               <div
                 key={i}
                 style={{
-                  padding:     '10px 16px',
+                  padding:      '10px 16px',
                   borderBottom: '1px solid #1e1812',
-                  background:  recent ? 'rgba(180,40,30,0.06)' : 'transparent',
+                  background:   bgColor,
                 }}
               >
                 {/* Threat type + time */}
@@ -179,22 +199,37 @@ export default function RedAlertSidebar() {
                     {threatLabel(alert.title, alert.category)}
                   </span>
                   <span style={{ fontSize: '10px', color: '#5a4a44' }}>
-                    {alert.time}
+                    {formatLocalTime(alert.alertDate)}
                   </span>
                 </div>
 
-                {/* City name — Hebrew RTL */}
+                {/* English city name — primary */}
+                {hasEn && (
+                  <div style={{
+                    fontSize:     '13px',
+                    fontWeight:   priority ? 700 : 400,
+                    color:        enColor,
+                    marginTop:    '3px',
+                    whiteSpace:   'nowrap',
+                    overflow:     'hidden',
+                    textOverflow: 'ellipsis',
+                  }}>
+                    {alert.cities_en}
+                  </div>
+                )}
+
+                {/* Hebrew city name — secondary (or primary if no English) */}
                 <div style={{
-                  fontSize:     '13px',
-                  color:         cityColor,
-                  marginTop:    '3px',
+                  fontSize:     hasEn ? '11px' : '13px',
+                  color:        hasEn ? '#5a4a44' : enColor,
+                  marginTop:    hasEn ? '1px' : '3px',
                   direction:    'rtl',
                   textAlign:    'right',
                   whiteSpace:   'nowrap',
                   overflow:     'hidden',
                   textOverflow: 'ellipsis',
                 }}>
-                  {alert.cities}
+                  {alert.cities_he}
                 </div>
               </div>
             );
