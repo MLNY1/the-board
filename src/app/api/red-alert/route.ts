@@ -111,58 +111,64 @@ export async function GET(request: Request) {
     );
   }
 
-  // ── Fetch alerts from sources that work outside Israel ───────────────────
-
-  // Source 1: oref.org.il history API — works outside Israel, returns recent alerts
+  // ── Source 1: tzevaadom /alerts-history — PRIMARY, has historical data ──────
   try {
-    const fmt = (d: Date) =>
-      `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
-    const today     = fmt(new Date());
-    const yesterday = fmt(new Date(Date.now() - 86_400_000));
-    const orefUrl   =
-      `https://alerts-history.oref.org.il/Shared/Ajax/GetAlarmsHistory.aspx` +
-      `?lang=en&fromDate=${yesterday}&toDate=${today}&mode=0`;
-
-    const res = await fetchWithTimeout(orefUrl, {
-      headers: {
-        'Accept':     'application/json',
-        'Referer':    'https://www.oref.org.il/',
-        'X-Requested-With': 'XMLHttpRequest',
-      },
+    const res = await fetchWithTimeout('https://api.tzevaadom.co.il/alerts-history', {
+      headers: { 'Accept': 'application/json', 'Referer': 'https://www.tzevaadom.co.il/' },
     });
 
     if (res.ok) {
-      const text = await res.text();
-      const raw  = text.trim() ? JSON.parse(text) : [];
+      const raw = await res.json();
+      const arr = Array.isArray(raw) ? raw : (raw?.alerts ?? raw?.data ?? raw?.notifications ?? []);
+
+      if (arr.length > 0) {
+        // Log first item so we can see the real field structure
+        console.log('[RedAlert] alerts-history sample:', JSON.stringify(arr[0]));
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fresh: AlertItem[] = (Array.isArray(raw) ? raw : []).slice(0, HISTORY_LIMIT).map((a: any) => {
-        // alertDate comes as "YYYY-MM-DD HH:MM:SS" — isRecent handles this format
-        const alertDate = a.alertDate ?? '';
-        const [datePart, timePart] = (alertDate as string).split(' ');
+      const fresh: AlertItem[] = arr.slice(0, HISTORY_LIMIT).map((a: any) => {
+        const alertDate = a.alertDate
+          ?? a.alert_date
+          ?? (a.timestamp ? new Date(a.timestamp * 1000).toISOString() : '')
+          ?? (a.time && a.date ? `${a.date}T${a.time}+03:00` : '');
+
+        // City name: prefer Hebrew, append English in parens if available
+        const cityHe  = Array.isArray(a.cities) ? a.cities.join(' · ')
+                      : (a.cities ?? a.city ?? a.name ?? a.data ?? '');
+        const cityEn  = a.name_en ?? a.city_en ?? a.cities_en ?? '';
+        const cities  = cityHe && cityEn && cityHe !== cityEn
+          ? `${cityHe} (${cityEn})`
+          : (cityHe || cityEn);
+
+        const [datePart, timePart] = typeof alertDate === 'string' && alertDate.includes(' ')
+          ? alertDate.split(' ')
+          : [a.date ?? '', a.time ?? ''];
+
         return {
-          cities:    a.data ?? '',
-          time:      timePart ?? '',
-          date:      datePart ?? '',
+          cities,
+          time:     a.time     ?? timePart ?? '',
+          date:     a.date     ?? datePart ?? '',
           alertDate,
-          title:     a.title ?? 'Rocket and missile fire',
-          category:  String(a.cat ?? ''),
+          title:    a.threat   ?? a.title ?? a.type ?? '',
+          category: String(a.category ?? a.cat ?? a.threat_id ?? ''),
         };
-      }).filter((a: AlertItem) => a.alertDate);
+      }).filter((a: AlertItem) => a.alertDate && a.cities);
 
       if (fresh.length > 0) {
-        console.log(`[RedAlert] oref history — ${fresh.length} alerts, persisting`);
+        console.log(`[RedAlert] alerts-history — ${fresh.length} alerts, persisting`);
         await upsertAlerts(fresh);
       } else {
-        console.log('[RedAlert] oref history — no alerts in range');
+        console.log('[RedAlert] alerts-history — parsed 0 valid alerts');
       }
     } else {
-      console.log(`[RedAlert] oref history returned HTTP ${res.status}`);
+      console.log(`[RedAlert] alerts-history returned HTTP ${res.status}`);
     }
   } catch (err) {
-    console.log(`[RedAlert] oref history failed (${(err as Error).message})`);
+    console.log(`[RedAlert] alerts-history failed (${(err as Error).message})`);
   }
 
-  // Source 2: tzevaadom /notifications — live active alerts (backup)
+  // ── Source 2: tzevaadom /notifications — active alerts only, supplements history
   try {
     const res = await fetchWithTimeout('https://api.tzevaadom.co.il/notifications', {
       headers: { 'Accept': 'application/json', 'Referer': 'https://www.tzevaadom.co.il/' },
@@ -180,21 +186,21 @@ export async function GET(request: Request) {
           date:      a.date  ?? '',
           alertDate,
           title:     a.threat ?? a.title ?? '',
-          category:  '',
+          category:  String(a.category ?? a.cat ?? ''),
         };
-      }).filter((a: AlertItem) => a.alertDate);
+      }).filter((a: AlertItem) => a.alertDate && a.cities);
 
       if (fresh.length > 0) {
-        console.log(`[RedAlert] tzevaadom /notifications — ${fresh.length} live alerts, persisting`);
+        console.log(`[RedAlert] /notifications — ${fresh.length} active alerts, persisting`);
         await upsertAlerts(fresh);
       } else {
-        console.log('[RedAlert] tzevaadom /notifications — quiet');
+        console.log('[RedAlert] /notifications — quiet (no active alerts)');
       }
     } else {
-      console.log(`[RedAlert] tzevaadom /notifications returned HTTP ${res.status}`);
+      console.log(`[RedAlert] /notifications returned HTTP ${res.status}`);
     }
   } catch (err) {
-    console.log(`[RedAlert] tzevaadom /notifications failed (${(err as Error).message})`);
+    console.log(`[RedAlert] /notifications failed (${(err as Error).message})`);
   }
 
   // ── Always serve from Supabase history ────────────────────────────────────
