@@ -51,7 +51,7 @@ const RSS_FEEDS = [
   { url: 'https://www.i24news.tv/en/feed', source: 'i24NEWS' },
 ];
 
-const AI_BATCH_SIZE = 30;
+const AI_BATCH_SIZE = 20;
 
 const CLAUDE_SYSTEM_PROMPT = `You are a senior news editor creating a live briefing board for Orthodox Jewish families
 during Shabbos and Yom Tov. Your job is to deliver only the most important, factual news
@@ -271,7 +271,7 @@ async function processWithClaude(
   }));
 
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 4096,
     system: CLAUDE_SYSTEM_PROMPT,
     messages: [
@@ -380,9 +380,9 @@ export async function GET(req: NextRequest) {
 
     if (toProcess.length > 0) {
       // ── Guard 1: too few articles to bother ────────────────────────────────
-      if (toProcess.length < 5) {
+      if (toProcess.length < 8) {
         console.log(`[Ingest] Only ${toProcess.length} new articles, skipping Claude processing`);
-        log.push(`Skipping Claude: only ${toProcess.length} articles (< 5 threshold)`);
+        log.push(`Skipping Claude: only ${toProcess.length} articles (< 8 threshold)`);
         // fall through to pruning
       } else {
       // ── Guard 2: recent digest + few new articles ──────────────────────────
@@ -397,12 +397,25 @@ export async function GET(req: NextRequest) {
         ? Date.now() - new Date(latestDigest.created_at).getTime()
         : Infinity;
 
-      if (digestAgeMs < 30 * 60 * 1000 && toProcess.length < 10) {
+      if (digestAgeMs < 60 * 60 * 1000 && toProcess.length < 8) {
         console.log(`[Ingest] Recent digest exists and only ${toProcess.length} new articles, skipping`);
-        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old + only ${toProcess.length} articles (< 10 threshold)`);
+        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old + only ${toProcess.length} articles (< 8 threshold)`);
         // fall through to pruning
       } else {
-      // ── Guard 3: pre-filter articles already covered by existing stories ───
+      // ── Guard 3: hard daily cap ────────────────────────────────────────────
+      const todayUtc = new Date();
+      todayUtc.setUTCHours(0, 0, 0, 0);
+      const { count: storiesToday } = await supabase
+        .from('digest_stories')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', todayUtc.toISOString());
+
+      if ((storiesToday ?? 0) >= 40) {
+        console.log(`[Ingest] Daily cap reached (${storiesToday} stories today), skipping Claude`);
+        log.push(`Skipping Claude: daily cap reached (${storiesToday}/40 stories today)`);
+        // fall through to pruning
+      } else {
+      // ── Guard 4: pre-filter articles already covered by existing stories ───
       const { data: existingStories } = await supabase
         .from('digest_stories')
         .select('headline');
@@ -593,8 +606,9 @@ export async function GET(req: NextRequest) {
         .update({ processed: true })
         .in('id', processedIds);
       } // end toSendToClaude.length > 0
-      } // end guard 2
-      } // end guard 1
+      } // end guard 3 (daily cap)
+      } // end guard 2 (recent digest)
+      } // end guard 1 (min articles)
     }
 
     // -----------------------------------------------------------------------
