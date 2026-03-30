@@ -112,6 +112,7 @@ export async function GET(request: Request) {
   }
 
   // ── Source 1: tzevaadom /alerts-history — PRIMARY, has historical data ──────
+  // Response: [{ id, alerts: [{ time (unix seconds), cities (string[]), threat (0=rockets,5=aircraft), isDrill }] }]
   try {
     const res = await fetchWithTimeout('https://api.tzevaadom.co.il/alerts-history', {
       headers: { 'Accept': 'application/json', 'Referer': 'https://www.tzevaadom.co.il/' },
@@ -119,47 +120,43 @@ export async function GET(request: Request) {
 
     if (res.ok) {
       const raw = await res.json();
-      const arr = Array.isArray(raw) ? raw : (raw?.alerts ?? raw?.data ?? raw?.notifications ?? []);
 
-      if (arr.length > 0) {
-        // Log first item so we can see the real field structure
-        console.log('[RedAlert] alerts-history sample:', JSON.stringify(arr[0]));
+      // Flatten nested structure: outer events → inner alerts
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const flattened: any[] = [];
+      for (const event of (Array.isArray(raw) ? raw : [])) {
+        for (const alert of (event.alerts ?? [])) {
+          if (alert.isDrill) continue;
+          flattened.push(alert);
+        }
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fresh: AlertItem[] = arr.slice(0, HISTORY_LIMIT).map((a: any) => {
-        const alertDate = a.alertDate
-          ?? a.alert_date
-          ?? (a.timestamp ? new Date(a.timestamp * 1000).toISOString() : '')
-          ?? (a.time && a.date ? `${a.date}T${a.time}+03:00` : '');
+      // Sort most-recent first, take top 30
+      flattened.sort((a, b) => b.time - a.time);
+      const top30 = flattened.slice(0, 30);
 
-        // City name: prefer Hebrew, append English in parens if available
-        const cityHe  = Array.isArray(a.cities) ? a.cities.join(' · ')
-                      : (a.cities ?? a.city ?? a.name ?? a.data ?? '');
-        const cityEn  = a.name_en ?? a.city_en ?? a.cities_en ?? '';
-        const cities  = cityHe && cityEn && cityHe !== cityEn
-          ? `${cityHe} (${cityEn})`
-          : (cityHe || cityEn);
-
-        const [datePart, timePart] = typeof alertDate === 'string' && alertDate.includes(' ')
-          ? alertDate.split(' ')
-          : [a.date ?? '', a.time ?? ''];
+      const fresh: AlertItem[] = top30.map(a => {
+        const d         = new Date(a.time * 1000);
+        const alertDate = d.toISOString();
+        const timeStr   = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Jerusalem' });
+        const dateStr   = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Jerusalem' }).replace(/\//g, '.');
+        const title     = a.threat === 5 ? 'Hostile aircraft intrusion' : 'Rocket and missile fire';
 
         return {
-          cities,
-          time:     a.time     ?? timePart ?? '',
-          date:     a.date     ?? datePart ?? '',
+          cities:   (Array.isArray(a.cities) ? a.cities : [a.cities ?? '']).join(' · '),
+          time:     timeStr,
+          date:     dateStr,
           alertDate,
-          title:    a.threat   ?? a.title ?? a.type ?? '',
-          category: String(a.category ?? a.cat ?? a.threat_id ?? ''),
+          title,
+          category: String(a.threat ?? 0),
         };
-      }).filter((a: AlertItem) => a.alertDate && a.cities);
+      }).filter(a => a.cities);
 
       if (fresh.length > 0) {
-        console.log(`[RedAlert] alerts-history — ${fresh.length} alerts, persisting`);
+        console.log(`[RedAlert] alerts-history — ${fresh.length} alerts parsed, persisting`);
         await upsertAlerts(fresh);
       } else {
-        console.log('[RedAlert] alerts-history — parsed 0 valid alerts');
+        console.log('[RedAlert] alerts-history — parsed 0 valid alerts from', Array.isArray(raw) ? raw.length : 0, 'events');
       }
     } else {
       console.log(`[RedAlert] alerts-history returned HTTP ${res.status}`);
