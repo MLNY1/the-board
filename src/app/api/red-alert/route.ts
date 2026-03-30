@@ -6,7 +6,7 @@ export const revalidate = 0;
 
 const TIMEOUT_MS       = 5_000;
 const HISTORY_LIMIT    = 20;
-const ACTIVE_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+const ACTIVE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();

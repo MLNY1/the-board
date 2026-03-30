@@ -32,7 +32,7 @@ function isRecent(alertDate: string): boolean {
     const ms = alertDate.includes('T')
       ? Date.parse(alertDate)
       : Date.parse(alertDate.replace(' ', 'T') + '+03:00');
-    return !isNaN(ms) && Date.now() - ms < 30 * 60 * 1000;
+    return !isNaN(ms) && Date.now() - ms < 15 * 60 * 1000;
   } catch { return false; }
 }
 
