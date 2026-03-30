@@ -57,6 +57,13 @@ const CLAUDE_SYSTEM_PROMPT = `You are a senior news editor creating a live brief
 during Shabbos and Yom Tov. Your job is to deliver only the most important, factual news
 people can safely glance at on a wall-mounted screen.
 
+CRITICAL CLUSTERING RULE: If multiple articles describe the same underlying event or situation,
+you MUST cluster them into a SINGLE story. Use the same topic_slug for all of them. For example,
+if 6 articles all discuss the US considering ground operations in Iran, those are ONE story, not six.
+Err heavily on the side of merging — it is far worse to show duplicates than to miss a minor
+distinction between articles. When in doubt, MERGE. A wall-mounted news board showing the same
+story 7 times with trivially different headlines is broken and unusable.
+
 For every batch of articles:
 
 1. Score each article 1-100 on "importance" using this exact guide:
@@ -100,6 +107,16 @@ Respond ONLY with valid JSON. No other text, no markdown fences, no explanation.
 // ---------------------------------------------------------------------------
 // Dedup helpers
 // ---------------------------------------------------------------------------
+
+function jaccardSimilarity(a: string, b: string): number {
+  const words = (s: string) =>
+    new Set(s.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean));
+  const aW = words(a);
+  const bW = words(b);
+  const intersection = Array.from(aW).filter(w => bW.has(w)).length;
+  const union = new Set([...Array.from(aW), ...Array.from(bW)]).size;
+  return union > 0 ? intersection / union : 0;
+}
 
 const STOP_WORDS = new Set([
   'the', 'a', 'an', 'as', 'to', 'in', 'for', 'of', 'and', 'amid', 'after',
@@ -362,7 +379,54 @@ export async function GET(req: NextRequest) {
     log.push(`Articles to AI-process: ${toProcess.length}`);
 
     if (toProcess.length > 0) {
-      const stories = await processWithClaude(toProcess);
+      // ── Guard 1: too few articles to bother ────────────────────────────────
+      if (toProcess.length < 5) {
+        console.log(`[Ingest] Only ${toProcess.length} new articles, skipping Claude processing`);
+        log.push(`Skipping Claude: only ${toProcess.length} articles (< 5 threshold)`);
+        // fall through to pruning
+      } else {
+      // ── Guard 2: recent digest + few new articles ──────────────────────────
+      const { data: latestDigest } = await supabase
+        .from('digest_stories')
+        .select('created_at')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const digestAgeMs = latestDigest?.created_at
+        ? Date.now() - new Date(latestDigest.created_at).getTime()
+        : Infinity;
+
+      if (digestAgeMs < 30 * 60 * 1000 && toProcess.length < 10) {
+        console.log(`[Ingest] Recent digest exists and only ${toProcess.length} new articles, skipping`);
+        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old + only ${toProcess.length} articles (< 10 threshold)`);
+        // fall through to pruning
+      } else {
+      // ── Guard 3: pre-filter articles already covered by existing stories ───
+      const { data: existingStories } = await supabase
+        .from('digest_stories')
+        .select('headline');
+
+      const existingHeadlines = (existingStories ?? []).map(s => s.headline as string);
+      const coveredIds: string[] = [];
+
+      const toSendToClaude = toProcess.filter(article => {
+        const covered = existingHeadlines.some(h => jaccardSimilarity(article.title, h) > 0.5);
+        if (covered) coveredIds.push(article.id);
+        return !covered;
+      });
+
+      if (coveredIds.length > 0) {
+        console.log(`[Ingest] Skipped ${coveredIds.length} articles already covered by existing stories`);
+        log.push(`Pre-filtered ${coveredIds.length} articles already covered by existing stories`);
+        await supabase.from('raw_articles').update({ processed: true }).in('id', coveredIds);
+      }
+
+      if (toSendToClaude.length === 0) {
+        log.push('All articles pre-filtered — skipping Claude');
+      } else {
+      log.push(`Sending ${toSendToClaude.length} articles to Claude`);
+      const stories = await processWithClaude(toSendToClaude);
       log.push(`Claude returned ${stories.length} stories`);
 
       // ── Israel/ME importance boost (+15, capped at 100) ──────────────────
@@ -432,18 +496,10 @@ export async function GET(req: NextRequest) {
       const pass2Input   = Array.from(topicMap.values());
       const jaccardKept: ClaudeStory[] = [];
       for (const story of pass2Input) {
-        const words = new Set(
-          story.headline.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean)
-        );
         let isDup  = false;
         let dupIdx = -1;
         for (let i = 0; i < jaccardKept.length; i++) {
-          const keptWords = new Set(
-            jaccardKept[i].headline.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean)
-          );
-          const intersection = Array.from(words).filter(w => keptWords.has(w)).length;
-          const union        = new Set([...Array.from(words), ...Array.from(keptWords)]).size;
-          if (union > 0 && intersection / union >= 0.5) {
+          if (jaccardSimilarity(story.headline, jaccardKept[i].headline) >= 0.5) {
             isDup  = true;
             dupIdx = i;
             break;
@@ -475,7 +531,7 @@ export async function GET(req: NextRequest) {
       if (removedCount > 0) log.push(`[Dedup] Removed ${removedCount} duplicate stories (${stories.length} → ${finalStories.length})`);
 
       // Build a lookup: article_id → source info
-      const articleLookup = new Map(toProcess.map((a) => [a.id, a]));
+      const articleLookup = new Map(toSendToClaude.map((a) => [a.id, a]));
 
       if (finalStories.length > 0) {
         const digestRows = finalStories.map((story) => {
@@ -530,12 +586,15 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Mark all processed articles
-      const processedIds = toProcess.map((a) => a.id);
+      // Mark all Claude-processed articles
+      const processedIds = toSendToClaude.map((a) => a.id);
       await supabase
         .from('raw_articles')
         .update({ processed: true })
         .in('id', processedIds);
+      } // end toSendToClaude.length > 0
+      } // end guard 2
+      } // end guard 1
     }
 
     // -----------------------------------------------------------------------
