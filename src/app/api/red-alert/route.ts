@@ -78,7 +78,32 @@ async function loadHistory(): Promise<AlertItem[]> {
   }));
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  // ── Test mode — ?test=true returns hardcoded sample data ─────────────────
+  if (request.url.includes('test=true')) {
+    const now = Date.now();
+    return NextResponse.json(
+      {
+        active: true,
+        alerts: [
+          { cities: 'תל אביב - מרכז העיר', time: '23:14', date: '29.03.2026', alertDate: new Date(now - 2  * 60000).toISOString(), title: 'ירי רקטות וטילים',  category: '1' },
+          { cities: 'רמת גן · גבעתיים',    time: '23:12', date: '29.03.2026', alertDate: new Date(now - 4  * 60000).toISOString(), title: 'ירי רקטות וטילים',  category: '1' },
+          { cities: 'חיפה · קריות',         time: '23:08', date: '29.03.2026', alertDate: new Date(now - 8  * 60000).toISOString(), title: 'ירי רקטות וטילים',  category: '1' },
+          { cities: 'באר שבע · אופקים',     time: '22:58', date: '29.03.2026', alertDate: new Date(now - 18 * 60000).toISOString(), title: 'ירי רקטות וטילים',  category: '1' },
+          { cities: 'ירושלים · בית שמש',    time: '22:45', date: '29.03.2026', alertDate: new Date(now - 30 * 60000).toISOString(), title: 'ירי רקטות וטילים',  category: '1' },
+          { cities: 'אשדוד · אשקלון',       time: '22:38', date: '29.03.2026', alertDate: new Date(now - 38 * 60000).toISOString(), title: 'ירי רקטות וטילים',  category: '1' },
+          { cities: 'שדרות · עוטף עזה',     time: '22:30', date: '29.03.2026', alertDate: new Date(now - 45 * 60000).toISOString(), title: 'ירי רקטות וטילים',  category: '1' },
+          { cities: 'קריית שמונה · מטולה',  time: '22:20', date: '29.03.2026', alertDate: new Date(now - 55 * 60000).toISOString(), title: 'ירי רקטות וטילים',  category: '1' },
+          { cities: 'נתניה · הרצליה',        time: '22:10', date: '29.03.2026', alertDate: new Date(now - 65 * 60000).toISOString(), title: 'חדירת כלי טיס עוין', category: '2' },
+          { cities: 'צפון הגולן',             time: '22:00', date: '29.03.2026', alertDate: new Date(now - 75 * 60000).toISOString(), title: 'חדירת כלי טיס עוין', category: '2' },
+        ],
+        last_checked: new Date().toISOString(),
+        source: 'test',
+      },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+
   if (process.env.RED_ALERT_ENABLED !== 'true') {
     return NextResponse.json(
       { active: false, alerts: [], last_checked: new Date().toISOString(), source: 'disabled' },

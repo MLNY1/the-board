@@ -68,9 +68,12 @@ export default function RedAlertSidebar() {
   useEffect(() => {
     mountedRef.current = true;
 
+    const testMode = typeof window !== 'undefined' && window.location.search.includes('test=true');
+    const apiUrl   = testMode ? '/api/red-alert?test=true' : '/api/red-alert';
+
     const fetch_ = async () => {
       try {
-        const res = await fetch('/api/red-alert');
+        const res = await fetch(apiUrl);
         if (res.ok && mountedRef.current) setData(await res.json());
       } catch {}
     };
