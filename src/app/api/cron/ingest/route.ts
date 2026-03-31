@@ -582,12 +582,12 @@ export async function GET(req: NextRequest) {
           };
         });
 
-        // Clear ALL existing digest_stories, then insert only the fresh deduplicated batch.
-        // This ensures no stale duplicates accumulate across runs.
+        // Clear digest_stories older than 12h, then insert the fresh batch.
+        const cutoff12h = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
         const { error: clearError } = await supabase
           .from('digest_stories')
           .delete()
-          .neq('id', '00000000-0000-0000-0000-000000000000'); // delete all rows
+          .lt('created_at', cutoff12h);
         if (clearError) log.push(`Digest clear error: ${clearError.message}`);
         else log.push('Cleared digest_stories');
 

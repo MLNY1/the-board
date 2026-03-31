@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     // Determine time window for story retrieval
     // -----------------------------------------------------------------------
     const now = new Date();
-    const cutoff48h = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    const cutoff12h = new Date(now.getTime() - 12 * 60 * 60 * 1000);
 
     // Fetch Shabbos/YT state and market mode concurrently
     const [activeWindow, shabbosWindow, weekdayYomTov] = await Promise.allSettled([
@@ -54,10 +54,10 @@ export async function GET(req: NextRequest) {
     const shabbos        = shabbosWindow.status === 'fulfilled'  ? shabbosWindow.value  : null;
     const marketActive   = forceMarket || (weekdayYomTov.status === 'fulfilled' && weekdayYomTov.value);
 
-    // If Shabbos is active, show stories since Shabbos started (not just 48h).
+    // If Shabbos is active, show stories since Shabbos started (not just 12h).
     // Use whichever cutoff gives MORE stories.
-    let storyCutoff: Date = cutoff48h;
-    if (active?.start && active.start < cutoff48h) {
+    let storyCutoff: Date = cutoff12h;
+    if (active?.start && active.start < cutoff12h) {
       storyCutoff = active.start;
     }
 
