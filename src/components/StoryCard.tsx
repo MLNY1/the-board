@@ -19,7 +19,7 @@ function formatRelativeTime(iso: string): string {
   if (diffMin < 1)  return 'Just now';
   if (diffMin < 60) return `${diffMin}m ago`;
   const h = Math.floor(diffMin / 60);
-  if (h < 24) return `${h}h ago`;
+  if (h < 12) return `${h}h ago`;
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
@@ -97,7 +97,7 @@ export default function StoryCard({ story }: StoryCardProps) {
           {story.sources[0] ?? ''}
         </span>
         <span style={{ flexShrink: 0 }}>
-          {formatRelativeTime(story.published_at)}
+          {formatRelativeTime(story.created_at)}
         </span>
       </div>
     </div>

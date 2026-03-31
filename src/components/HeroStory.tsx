@@ -20,7 +20,7 @@ function formatRelativeTime(iso: string): string {
   if (diffMin < 1)  return 'Just now';
   if (diffMin < 60) return `${diffMin}m ago`;
   const h = Math.floor(diffMin / 60);
-  if (h < 24) return `${h}h ago`;
+  if (h < 12) return `${h}h ago`;
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
@@ -141,7 +141,7 @@ export default function HeroStory({ story, isNew = false }: HeroStoryProps) {
         >
           {story.sources.slice(0, 3).join(' · ')}
           {story.sources.length > 0 && ' · '}
-          {formatRelativeTime(story.published_at)}
+          {formatRelativeTime(story.created_at)}
         </div>
       </div>
     </div>
