@@ -309,7 +309,12 @@ export async function GET(req: NextRequest) {
   const log: string[] = [];
 
   try {
-    // (digest_stories is cleared right before we insert the new batch)
+    // ── TEMPORARY ONE-TIME NUCLEAR CLEANUP — remove after first run ──────────
+    await supabase.from('digest_stories').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    console.log('[CLEANUP] One-time nuclear wipe of digest_stories');
+    await supabase.from('raw_articles').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    console.log('[CLEANUP] One-time nuclear wipe of raw_articles');
+    // ── END TEMPORARY ────────────────────────────────────────────────────────
 
     // -----------------------------------------------------------------------
     // Step 1: Fetch articles from all sources
