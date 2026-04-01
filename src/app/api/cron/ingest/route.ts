@@ -400,6 +400,14 @@ export async function GET(req: NextRequest) {
         log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old + only ${toProcess.length} articles (< 8 threshold)`);
         // fall through to pruning
       } else {
+      // ── Clean up stale digest stories before cap check ────────────────────
+      const cutoff12h = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+      const { error: staleErr } = await supabase
+        .from('digest_stories')
+        .delete()
+        .lt('created_at', cutoff12h);
+      if (staleErr) log.push(`Stale digest clear error: ${staleErr.message}`);
+
       // ── Guard 3: hard cap on current live stories ─────────────────────────
       const { count: storiesToday } = await supabase
         .from('digest_stories')
@@ -576,15 +584,6 @@ export async function GET(req: NextRequest) {
             published_at: publishedAt,
           };
         });
-
-        // Clear digest_stories older than 12h, then insert the fresh batch.
-        const cutoff12h = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-        const { error: clearError } = await supabase
-          .from('digest_stories')
-          .delete()
-          .lt('created_at', cutoff12h);
-        if (clearError) log.push(`Digest clear error: ${clearError.message}`);
-        else log.push('Cleared digest_stories');
 
         const { error: digestError } = await supabase.from('digest_stories').insert(digestRows);
         if (digestError) {
