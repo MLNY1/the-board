@@ -365,11 +365,13 @@ export async function GET(req: NextRequest) {
     // -----------------------------------------------------------------------
     // Step 4: AI-process unprocessed articles (up to AI_BATCH_SIZE)
     // -----------------------------------------------------------------------
+    const since6h = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
     const { data: unprocessed } = await supabase
       .from('raw_articles')
       .select('id, title, description, content, source_name, source_url, published_at, image_url')
       .eq('processed', false)
       .is('duplicate_of', null)
+      .gte('fetched_at', since6h)
       .order('fetched_at', { ascending: false })
       .limit(AI_BATCH_SIZE);
 
@@ -466,6 +468,7 @@ export async function GET(req: NextRequest) {
         }
       }
       if (boostedCount > 0) log.push(`Israel boost applied to ${boostedCount} stories`);
+      console.log('[Scoring] Top 5 stories:', stories.slice(0, 5).map(s => ({ headline: s.headline, score: s.importance_score, tier: s.tier })));
 
       // ── Market news boost (weekday Yom Tov only) ─────────────────────────
       const defaultZip = process.env.DEFAULT_ZIP ?? '11598';

@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     // Determine time window for story retrieval
     // -----------------------------------------------------------------------
     const now = new Date();
-    const cutoff12h = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+    const cutoff12h = new Date(now.getTime() - 6 * 60 * 60 * 1000);
 
     // Fetch Shabbos/YT state and market mode concurrently
     const [activeWindow, shabbosWindow, weekdayYomTov] = await Promise.allSettled([
