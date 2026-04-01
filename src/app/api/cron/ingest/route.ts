@@ -468,7 +468,7 @@ export async function GET(req: NextRequest) {
         }
       }
       if (boostedCount > 0) log.push(`Israel boost applied to ${boostedCount} stories`);
-      console.log('[Scoring] Top 5 stories:', stories.slice(0, 5).map(s => ({ headline: s.headline, score: s.importance_score, tier: s.tier })));
+      log.push(`[Scoring] Top 5: ${JSON.stringify(stories.slice(0, 5).map(s => ({ headline: s.headline.slice(0, 60), score: s.importance_score, tier: s.tier })))}`);
 
       // ── Market news boost (weekday Yom Tov only) ─────────────────────────
       const defaultZip = process.env.DEFAULT_ZIP ?? '11598';
