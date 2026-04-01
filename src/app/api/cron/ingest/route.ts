@@ -350,10 +350,6 @@ export async function GET(req: NextRequest) {
   const runStart = Date.now();
   const log: string[] = [];
 
-  // TEMPORARY ONE-TIME CLEANUP — remove after first run
-  await supabase.from('digest_stories').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  console.log('[CLEANUP] Wiped all digest_stories');
-
   try {
     // -----------------------------------------------------------------------
     // Step 1: Fetch articles from all sources
