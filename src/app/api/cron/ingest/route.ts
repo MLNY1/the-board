@@ -136,6 +136,28 @@ function extractKeyWords(headline: string): string[] {
     .slice(0, 5);
 }
 
+const KNOWN_ENTITIES = new Set([
+  'UK', 'US', 'EU', 'UN', 'NATO', 'Iran', 'Israel', 'Gaza', 'Hamas',
+  'Hezbollah', 'IDF', 'China', 'Russia', 'Ukraine', 'Syria', 'Lebanon',
+  'Saudi', 'Egypt', 'Jordan', 'Turkey', 'Iraq', 'Yemen', 'West',
+  'Trump', 'Biden', 'Netanyahu', 'Putin', 'Xi', 'Macron', 'Zelensky',
+  'BBC', 'CNN', 'FBI', 'CIA', 'WHO', 'IMF', 'Fed', 'OPEC',
+  'Congress', 'Senate', 'Pentagon', 'Kremlin', 'Knesset',
+]);
+
+function extractEntities(headline: string): Set<string> {
+  const entities = new Set<string>();
+  const words = headline.split(/\s+/);
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i].replace(/[^A-Za-z]/g, '');
+    if (!word) continue;
+    if (KNOWN_ENTITIES.has(word)) { entities.add(word); continue; }
+    // Capitalised words that aren't sentence-openers
+    if (i > 0 && /^[A-Z]/.test(word) && word.length > 1) entities.add(word);
+  }
+  return entities;
+}
+
 // ---------------------------------------------------------------------------
 // Auth helper
 // ---------------------------------------------------------------------------
@@ -584,14 +606,54 @@ export async function GET(req: NextRequest) {
         if (!isDup) finalStories.push(story);
       }
 
-      const removedCount = stories.length - finalStories.length;
-      if (removedCount > 0) log.push(`[Dedup] Removed ${removedCount} duplicate stories (${stories.length} → ${finalStories.length})`);
+      // Pass 4: entity-based dedup — same primary source + 2+ shared entities = duplicate.
+      // finalStories is already sorted desc by score from Pass 3; keep the first (highest).
+      const articleSourceMap = new Map(toSendToClaude.map(a => [a.id, a.source_name ?? '']));
+      const primarySource = (s: ClaudeStory) => articleSourceMap.get(s.article_ids[0]) ?? '';
+      const entityKept: ClaudeStory[] = [];
+      let entityDropped = 0;
+      for (const story of finalStories) {
+        const src      = primarySource(story);
+        const entities = extractEntities(story.headline);
+        let isDup = false;
+        for (const kept of entityKept) {
+          if (primarySource(kept) !== src) continue;
+          const keptEntities = extractEntities(kept.headline);
+          const shared = Array.from(entities).filter(e => keptEntities.has(e)).length;
+          if (shared >= 2) { isDup = true; break; }
+        }
+        if (!isDup) entityKept.push(story);
+        else entityDropped++;
+      }
+      if (entityDropped > 0) log.push(`[Dedup] Entity pass removed ${entityDropped} near-duplicate stories`);
+
+      // Source cap: keep at most 3 stories per primary source, ranked by score.
+      const SOURCE_CAP = 3;
+      const sourceCounts = new Map<string, number>();
+      const cappedStories: ClaudeStory[] = [];
+      for (const story of entityKept) {
+        const src = primarySource(story);
+        const count = sourceCounts.get(src) ?? 0;
+        if (count < SOURCE_CAP) {
+          cappedStories.push(story);
+          sourceCounts.set(src, count + 1);
+        } else {
+          if (count === SOURCE_CAP) {
+            const dropped = entityKept.filter(s => primarySource(s) === src).length - SOURCE_CAP;
+            log.push(`[SourceCap] Capped ${src || 'unknown'}: kept ${SOURCE_CAP}, dropped ${dropped}`);
+            sourceCounts.set(src, SOURCE_CAP + 1); // prevent logging again for same source
+          }
+        }
+      }
+
+      const removedCount = stories.length - cappedStories.length;
+      if (removedCount > 0) log.push(`[Dedup] Removed ${removedCount} total stories (${stories.length} → ${cappedStories.length})`);
 
       // Build a lookup: article_id → source info
       const articleLookup = new Map(toSendToClaude.map((a) => [a.id, a]));
 
-      if (finalStories.length > 0) {
-        const digestRows = finalStories.map((story) => {
+      if (cappedStories.length > 0) {
+        const digestRows = cappedStories.map((story) => {
           const sourceArticles = story.article_ids
             .map((id) => articleLookup.get(id))
             .filter(Boolean) as typeof toProcess;
@@ -630,7 +692,7 @@ export async function GET(req: NextRequest) {
         if (digestError) {
           log.push(`Digest insert error: ${digestError.message}`);
         } else {
-          log.push(`Inserted ${digestRows.length} digest stories (${stories.length} before dedup)`);
+          log.push(`Inserted ${digestRows.length} digest stories (${stories.length} raw from Claude)`);
         }
       }
 
