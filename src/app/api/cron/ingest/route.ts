@@ -610,30 +610,28 @@ export async function GET(req: NextRequest) {
     // Step 5: Prune raw_articles older than 72h to prevent DB bloat
     // -----------------------------------------------------------------------
     const cutoff72h = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
-    // Get IDs of rows to be deleted, then nullify any FK references to them
-    // (including from newer rows that reference old ones) before deleting.
-    const { data: toDelete } = await supabase
+    // Nullify ALL duplicate_of references on old articles before deleting,
+    // so the FK constraint can't block. duplicate_of on 72h+ old rows has
+    // no deduplication value anyway.
+    await supabase
       .from('raw_articles')
-      .select('id')
+      .update({ duplicate_of: null })
+      .lt('fetched_at', cutoff72h)
+      .not('duplicate_of', 'is', null);
+    // Also nullify on newer rows that might reference old rows being deleted.
+    await supabase
+      .from('raw_articles')
+      .update({ duplicate_of: null })
+      .gte('fetched_at', cutoff72h)
+      .not('duplicate_of', 'is', null);
+
+    const { error: pruneError, count: pruneCount } = await supabase
+      .from('raw_articles')
+      .delete({ count: 'exact' })
       .lt('fetched_at', cutoff72h);
-    const toDeleteIds = (toDelete ?? []).map((r) => r.id);
 
-    if (toDeleteIds.length > 0) {
-      await supabase
-        .from('raw_articles')
-        .update({ duplicate_of: null })
-        .in('duplicate_of', toDeleteIds);
-
-      const { error: pruneError } = await supabase
-        .from('raw_articles')
-        .delete()
-        .lt('fetched_at', cutoff72h);
-
-      if (pruneError) log.push(`Prune error: ${pruneError.message}`);
-      else log.push(`Pruned ${toDeleteIds.length} old articles`);
-    } else {
-      log.push('No old articles to prune');
-    }
+    if (pruneError) log.push(`Prune error: ${pruneError.message}`);
+    else log.push(`Pruned ${pruneCount ?? 0} old articles`);
 
     // -----------------------------------------------------------------------
     // Done
