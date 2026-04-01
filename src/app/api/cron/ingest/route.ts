@@ -400,17 +400,14 @@ export async function GET(req: NextRequest) {
         log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old + only ${toProcess.length} articles (< 8 threshold)`);
         // fall through to pruning
       } else {
-      // ── Guard 3: hard daily cap ────────────────────────────────────────────
-      const todayUtc = new Date();
-      todayUtc.setUTCHours(0, 0, 0, 0);
+      // ── Guard 3: hard cap on current live stories ─────────────────────────
       const { count: storiesToday } = await supabase
         .from('digest_stories')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', todayUtc.toISOString());
+        .select('*', { count: 'exact', head: true });
 
-      if ((storiesToday ?? 0) >= 40) {
-        console.log(`[Ingest] Daily cap reached (${storiesToday} stories today), skipping Claude`);
-        log.push(`Skipping Claude: daily cap reached (${storiesToday}/40 stories today)`);
+      if ((storiesToday ?? 0) >= 60) {
+        console.log(`[Ingest] Story cap reached (${storiesToday} live stories), skipping Claude`);
+        log.push(`Skipping Claude: story cap reached (${storiesToday}/60 live stories)`);
         // fall through to pruning
       } else {
       // ── Guard 4: pre-filter articles already covered by existing stories ───
@@ -613,6 +610,14 @@ export async function GET(req: NextRequest) {
     // Step 5: Prune raw_articles older than 72h to prevent DB bloat
     // -----------------------------------------------------------------------
     const cutoff72h = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+    // Clear FK references before deleting to avoid constraint violation
+    const { error: nullifyError } = await supabase
+      .from('raw_articles')
+      .update({ duplicate_of: null })
+      .lt('fetched_at', cutoff72h)
+      .not('duplicate_of', 'is', null);
+    if (nullifyError) log.push(`Prune nullify error: ${nullifyError.message}`);
+
     const { error: pruneError } = await supabase
       .from('raw_articles')
       .delete()
