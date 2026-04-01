@@ -35,22 +35,22 @@ import type {
 // ---------------------------------------------------------------------------
 
 const RSS_FEEDS = [
-  { url: 'https://rsshub.app/apnews/topics/apf-topnews', source: 'AP News' },
-  { url: 'https://feeds.reuters.com/reuters/worldNews', source: 'Reuters' },
-  { url: 'https://feeds.bbci.co.uk/news/rss.xml', source: 'BBC' },
-  { url: 'https://feeds.npr.org/1001/rss.xml', source: 'NPR' },
-  { url: 'https://www.timesofisrael.com/feed/', source: 'Times of Israel' },
-  { url: 'https://www.aljazeera.com/xml/rss/all.xml', source: 'Al Jazeera' },
-  { url: 'http://rss.cnn.com/rss/edition.rss', source: 'CNN' },
-  { url: 'https://moxie.foxnews.com/google-publisher/latest.xml', source: 'Fox News' },
-  { url: 'https://feeds.nbcnews.com/nbcnews/public/news/world', source: 'NBC News' },
+  { url: 'https://rsshub.app/apnews/topics/apf-topnews',          source: 'AP News',          isIsrael: false },
+  { url: 'https://feeds.reuters.com/reuters/worldNews',            source: 'Reuters',           isIsrael: false },
+  { url: 'https://feeds.bbci.co.uk/news/rss.xml',                 source: 'BBC',               isIsrael: false },
+  { url: 'https://feeds.npr.org/1001/rss.xml',                    source: 'NPR',               isIsrael: false },
+  { url: 'https://www.aljazeera.com/xml/rss/all.xml',             source: 'Al Jazeera',        isIsrael: false },
+  { url: 'http://rss.cnn.com/rss/edition.rss',                    source: 'CNN',               isIsrael: false },
+  { url: 'https://moxie.foxnews.com/google-publisher/latest.xml', source: 'Fox News',          isIsrael: false },
+  { url: 'https://feeds.nbcnews.com/nbcnews/public/news/world',   source: 'NBC News',          isIsrael: false },
   // Israel-focused feeds
-  { url: 'https://www.jpost.com/rss/rssfeedsfrontpage.aspx', source: 'Jerusalem Post' },
-  { url: 'https://www.ynetnews.com/Integration/StoryRss2.xml', source: 'Ynet' },
-  { url: 'https://www.israelnationalnews.com/RSS', source: 'Arutz Sheva' },
-  { url: 'https://www.i24news.tv/en/feed', source: 'i24NEWS' },
-  { url: 'https://www.haaretz.com/cmlink/1.628752', source: 'Haaretz' },
-  { url: 'https://rss.gannettonline.com/usatoday/israelnews.rss', source: 'USA Today Israel' },
+  { url: 'https://www.jpost.com/rss/rssfeedsfrontpage.aspx',              source: 'Jerusalem Post',  isIsrael: true },
+  { url: 'https://www.timesofisrael.com/feed/',                           source: 'Times of Israel', isIsrael: true },
+  { url: 'https://www.ynetnews.com/category/3082/rss',                    source: 'Ynet',            isIsrael: true },
+  { url: 'https://www.israelhayom.com/feed/',                             source: 'Israel Hayom',    isIsrael: true },
+  { url: 'https://www.haaretz.com/srv/haaretz-latest-content',            source: 'Haaretz',         isIsrael: true },
+  { url: 'https://www.jta.org/feed',                                      source: 'JTA',             isIsrael: true },
+  { url: 'https://www.israelnationalnews.com/Rss/Rss.aspx/1',             source: 'Arutz Sheva',     isIsrael: true },
 ];
 
 const AI_BATCH_SIZE = 20;
@@ -159,49 +159,65 @@ function isAuthorized(req: NextRequest): boolean {
 // RSS ingestion
 // ---------------------------------------------------------------------------
 
-async function fetchRssArticles(): Promise<
-  Array<{
-    title: string;
-    description: string | null;
-    content: string | null;
-    source_name: string;
-    source_url: string | null;
-    published_at: string | null;
-    image_url: string | null;
-    category: string;
-    duplicate_of: string | null;
-  }>
-> {
-  const parser = new Parser({ timeout: 10000 });
+type RssArticle = {
+  title: string;
+  description: string | null;
+  content: string | null;
+  source_name: string;
+  source_url: string | null;
+  published_at: string | null;
+  image_url: string | null;
+  category: string;
+  duplicate_of: string | null;
+};
 
-  // Use Promise.allSettled so one broken feed doesn't abort the whole run
+async function fetchRssArticles(): Promise<{ articles: RssArticle[]; debugLines: string[] }> {
+  const parser = new Parser({ timeout: 10000 });
+  const debugLines: string[] = [];
+
   const results = await Promise.allSettled(
-    RSS_FEEDS.map(async ({ url, source }) => {
-      const feed = await parser.parseURL(url);
-      return (feed.items ?? []).slice(0, 20).map((item: RssItem) => ({
-        title: item.title ?? '',
-        description: item.contentSnippet ?? null,
-        content: item.content ?? null,
-        source_name: source,
-        source_url: item.link ? normalizeSourceUrl(item.link) : null,
-        published_at: item.isoDate ?? null,
-        image_url: item.enclosure?.url ?? null,
-        category: 'rss',
-        duplicate_of: null,
-      }));
+    RSS_FEEDS.map(async ({ url, source, isIsrael }) => {
+      let status = 0;
+      let bodyPreview = '';
+      try {
+        // Fetch manually so we can log HTTP status and body preview
+        const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        status = res.status;
+        const body = await res.text();
+        bodyPreview = body.substring(0, 200);
+        if (!res.ok) throw new Error(`HTTP ${status}`);
+        const feed = await parser.parseString(body);
+        const items = (feed.items ?? []).slice(0, 20).map((item: RssItem) => ({
+          title:       item.title ?? '',
+          description: item.contentSnippet ?? null,
+          content:     item.content ?? null,
+          source_name: source,
+          source_url:  item.link ? normalizeSourceUrl(item.link) : null,
+          published_at: item.isoDate ?? null,
+          image_url:   item.enclosure?.url ?? null,
+          category:    'rss',
+          duplicate_of: null,
+        })).filter((a: RssArticle) => a.title.length > 5);
+        if (isIsrael) {
+          debugLines.push(`[Israel Feed Debug] ${source}: status=${status}, items=${items.length}, error=none`);
+        }
+        return items;
+      } catch (err) {
+        const errMsg = String(err).substring(0, 100);
+        if (isIsrael) {
+          debugLines.push(`[Israel Feed Debug] ${source}: status=${status}, items=0, error=${errMsg}`);
+          debugLines.push(`[Israel Feed Debug] ${source} body preview: ${bodyPreview || '(no body)'}`);
+        }
+        return [];
+      }
     })
   );
 
-  const articles: ReturnType<typeof fetchRssArticles> extends Promise<infer T> ? T : never = [];
-
+  const articles: RssArticle[] = [];
   for (const result of results) {
-    if (result.status === 'fulfilled') {
-      articles.push(...result.value.filter((a) => a.title.length > 5));
-    }
-    // Silently skip rejected feeds — log is sufficient
+    if (result.status === 'fulfilled') articles.push(...result.value);
   }
-
-  return articles;
+  return { articles, debugLines };
 }
 
 // ---------------------------------------------------------------------------
@@ -317,15 +333,16 @@ export async function GET(req: NextRequest) {
     const category = getCurrentCategory();
     log.push(`Using NewsAPI category: ${category}`);
 
-    const [rssArticles, newsApiArticles] = await Promise.all([
+    const [{ articles: rssArticles, debugLines }, newsApiArticles] = await Promise.all([
       fetchRssArticles(),
       fetchNewsApiArticles(category),
     ]);
+    log.push(...debugLines);
 
     const ISRAEL_SOURCES = new Set([
-      'Times of Israel', 'Jerusalem Post', 'Ynet', 'Arutz Sheva', 'i24NEWS', 'Haaretz', 'USA Today Israel',
+      'Times of Israel', 'Jerusalem Post', 'Ynet', 'Arutz Sheva', 'Haaretz', 'JTA', 'Israel Hayom',
     ]);
-    const sixHoursAgo  = Date.now() - 6  * 60 * 60 * 1000;
+    const sixHoursAgo    = Date.now() -  6 * 60 * 60 * 1000;
     const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
     const allFetched = [...rssArticles, ...newsApiArticles];
     const allIncoming = allFetched.filter(a => {
@@ -337,7 +354,7 @@ export async function GET(req: NextRequest) {
     const skippedOld = allFetched.length - allIncoming.length;
     log.push(`Fetched: ${rssArticles.length} RSS + ${newsApiArticles.length} NewsAPI = ${allFetched.length} total, skipped ${skippedOld} older than 6/12h`);
 
-    const israelSourceList = ['Times of Israel', 'Jerusalem Post', 'Ynet', 'Arutz Sheva', 'i24NEWS', 'Haaretz', 'USA Today Israel'];
+    const israelSourceList = ['Jerusalem Post', 'Times of Israel', 'Ynet', 'Israel Hayom', 'Haaretz', 'JTA', 'Arutz Sheva'];
     const israelCounts = israelSourceList.map(s => `${s}: ${allIncoming.filter(a => a.source_name === s).length}`).join(', ');
     log.push(`[Israel Feeds] ${israelCounts}`);
 

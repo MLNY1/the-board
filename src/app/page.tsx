@@ -8,6 +8,7 @@ import { headers } from 'next/headers';
 import BoardDashboard from '@/components/BoardDashboard';
 import RedAlertSidebar from '@/components/RedAlertSidebar';
 import MobileAlertStrip from '@/components/MobileAlertStrip';
+import WeatherWidget from '@/components/WeatherWidget';
 import type { DigestResponse } from '@/types';
 
 async function getInitialDigest(zip: string, market: boolean): Promise<DigestResponse | null> {
@@ -38,14 +39,18 @@ export default async function Page({ searchParams }: PageProps) {
 
   return (
     <div className="page-grid">
-      {/* Left column: mobile alert strip (hidden on desktop) + main board */}
+      {/* Left column: mobile alert strip + mobile weather strip (hidden on desktop) + main board */}
       <div className="board-left-col" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
         <MobileAlertStrip />
+        <div className="weather-mobile-strip">
+          <WeatherWidget mobile />
+        </div>
         <BoardDashboard initialData={initialData} />
       </div>
 
       {/* Right column: sidebar (hidden on mobile) */}
       <div className="alert-sidebar">
+        <WeatherWidget />
         <RedAlertSidebar />
       </div>
     </div>
