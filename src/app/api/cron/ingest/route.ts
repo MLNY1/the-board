@@ -49,6 +49,8 @@ const RSS_FEEDS = [
   { url: 'https://www.ynetnews.com/Integration/StoryRss2.xml', source: 'Ynet' },
   { url: 'https://www.israelnationalnews.com/RSS', source: 'Arutz Sheva' },
   { url: 'https://www.i24news.tv/en/feed', source: 'i24NEWS' },
+  { url: 'https://www.haaretz.com/cmlink/1.628752', source: 'Haaretz' },
+  { url: 'https://rss.gannettonline.com/usatoday/israelnews.rss', source: 'USA Today Israel' },
 ];
 
 const AI_BATCH_SIZE = 20;
@@ -320,14 +322,24 @@ export async function GET(req: NextRequest) {
       fetchNewsApiArticles(category),
     ]);
 
-    const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
+    const ISRAEL_SOURCES = new Set([
+      'Times of Israel', 'Jerusalem Post', 'Ynet', 'Arutz Sheva', 'i24NEWS', 'Haaretz', 'USA Today Israel',
+    ]);
+    const sixHoursAgo  = Date.now() - 6  * 60 * 60 * 1000;
+    const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
     const allFetched = [...rssArticles, ...newsApiArticles];
     const allIncoming = allFetched.filter(a => {
       if (!a.published_at) return true;
-      return new Date(a.published_at).getTime() > sixHoursAgo;
+      const published = new Date(a.published_at).getTime();
+      const cutoff = ISRAEL_SOURCES.has(a.source_name ?? '') ? twelveHoursAgo : sixHoursAgo;
+      return published > cutoff;
     });
     const skippedOld = allFetched.length - allIncoming.length;
-    log.push(`Fetched: ${rssArticles.length} RSS + ${newsApiArticles.length} NewsAPI = ${allFetched.length} total, skipped ${skippedOld} older than 6h`);
+    log.push(`Fetched: ${rssArticles.length} RSS + ${newsApiArticles.length} NewsAPI = ${allFetched.length} total, skipped ${skippedOld} older than 6/12h`);
+
+    const israelSourceList = ['Times of Israel', 'Jerusalem Post', 'Ynet', 'Arutz Sheva', 'i24NEWS', 'Haaretz', 'USA Today Israel'];
+    const israelCounts = israelSourceList.map(s => `${s}: ${allIncoming.filter(a => a.source_name === s).length}`).join(', ');
+    log.push(`[Israel Feeds] ${israelCounts}`);
 
     // -----------------------------------------------------------------------
     // Step 2: Deduplication against last 24h of DB articles
@@ -465,7 +477,7 @@ export async function GET(req: NextRequest) {
       for (const story of stories) {
         const text = `${story.headline} ${story.summary}`.toLowerCase();
         if (israelKeywords.some(kw => text.includes(kw))) {
-          story.importance_score = Math.min(100, story.importance_score + 15);
+          story.importance_score = Math.min(100, story.importance_score + 20);
           if (story.importance_score >= 80)      story.tier = 'breaking';
           else if (story.importance_score >= 60) story.tier = 'major';
           else if (story.importance_score >= 40) story.tier = 'notable';
