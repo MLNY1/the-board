@@ -198,7 +198,7 @@ export default function RedAlertSidebar() {
                     {threatEmoji(alert.title, alert.category)}{' '}
                     {threatLabel(alert.title, alert.category)}
                   </span>
-                  <span style={{ fontSize: '10px', color: '#5a4a44' }}>
+                  <span style={{ fontSize: '13px', color: '#a08070' }}>
                     {formatLocalTime(alert.alertDate)}
                   </span>
                 </div>
