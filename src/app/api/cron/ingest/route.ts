@@ -610,28 +610,13 @@ export async function GET(req: NextRequest) {
     // Step 5: Prune raw_articles older than 72h to prevent DB bloat
     // -----------------------------------------------------------------------
     const cutoff72h = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
-    // Nullify ALL duplicate_of references on old articles before deleting,
-    // so the FK constraint can't block. duplicate_of on 72h+ old rows has
-    // no deduplication value anyway.
-    await supabase
+    const { error: pruneError } = await supabase
       .from('raw_articles')
-      .update({ duplicate_of: null })
-      .lt('fetched_at', cutoff72h)
-      .not('duplicate_of', 'is', null);
-    // Also nullify on newer rows that might reference old rows being deleted.
-    await supabase
-      .from('raw_articles')
-      .update({ duplicate_of: null })
-      .gte('fetched_at', cutoff72h)
-      .not('duplicate_of', 'is', null);
-
-    const { error: pruneError, count: pruneCount } = await supabase
-      .from('raw_articles')
-      .delete({ count: 'exact' })
+      .delete()
       .lt('fetched_at', cutoff72h);
 
     if (pruneError) log.push(`Prune error: ${pruneError.message}`);
-    else log.push(`Pruned ${pruneCount ?? 0} old articles`);
+    else log.push('Pruned old articles');
 
     // -----------------------------------------------------------------------
     // Done
