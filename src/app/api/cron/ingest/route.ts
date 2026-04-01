@@ -34,8 +34,6 @@ import type {
 // Constants
 // ---------------------------------------------------------------------------
 
-const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
-
 const RSS_FEEDS: Array<{ url: string; source: string; isIsrael: boolean; headers?: Record<string, string> }> = [
   { url: 'https://rsshub.app/apnews/topics/apf-topnews',          source: 'AP News',          isIsrael: false },
   { url: 'https://feeds.reuters.com/reuters/worldNews',            source: 'Reuters',           isIsrael: false },
@@ -48,7 +46,6 @@ const RSS_FEEDS: Array<{ url: string; source: string; isIsrael: boolean; headers
   { url: 'https://www.jpost.com/rss/rssfeedsfrontpage.aspx',       source: 'Jerusalem Post',  isIsrael: true },
   { url: 'https://www.jta.org/feed',                               source: 'JTA',             isIsrael: true },
   { url: 'https://www.israelhayom.com/feed/',                      source: 'Israel Hayom',    isIsrael: true },
-  { url: 'https://www.timesofisrael.com/feed/',                    source: 'Times of Israel', isIsrael: true, headers: { 'User-Agent': BROWSER_UA } },
   { url: 'https://rss.nytimes.com/services/xml/rss/nyt/MiddleEast.xml', source: 'NYT Middle East', isIsrael: true },
   { url: 'https://feeds.washingtonpost.com/rss/world',             source: 'WashPost World',  isIsrael: true },
   { url: 'https://www.aljazeera.com/xml/rss/all.xml',              source: 'Al Jazeera',      isIsrael: true },
@@ -345,7 +342,7 @@ export async function GET(req: NextRequest) {
     log.push(...debugLines);
 
     const ISRAEL_SOURCES = new Set([
-      'Jerusalem Post', 'JTA', 'Israel Hayom', 'Times of Israel',
+      'Jerusalem Post', 'JTA', 'Israel Hayom',
       'NYT Middle East', 'WashPost World', 'Al Jazeera', 'Middle East Eye', '+972 Magazine',
     ]);
     const sixHoursAgo    = Date.now() -  6 * 60 * 60 * 1000;
@@ -360,7 +357,7 @@ export async function GET(req: NextRequest) {
     const skippedOld = allFetched.length - allIncoming.length;
     log.push(`Fetched: ${rssArticles.length} RSS + ${newsApiArticles.length} NewsAPI = ${allFetched.length} total, skipped ${skippedOld} older than 6/12h`);
 
-    const israelSourceList = ['Jerusalem Post', 'JTA', 'Israel Hayom', 'Times of Israel', 'NYT Middle East', 'WashPost World', 'Al Jazeera', 'Middle East Eye', '+972 Magazine'];
+    const israelSourceList = ['Jerusalem Post', 'JTA', 'Israel Hayom', 'NYT Middle East', 'WashPost World', 'Al Jazeera', 'Middle East Eye', '+972 Magazine'];
     const israelCounts = israelSourceList.map(s => `${s}: ${allIncoming.filter(a => a.source_name === s).length}`).join(', ');
     log.push(`[Israel Feeds] ${israelCounts}`);
 
