@@ -350,6 +350,10 @@ export async function GET(req: NextRequest) {
   const runStart = Date.now();
   const log: string[] = [];
 
+  // TEMPORARY ONE-TIME CLEANUP — remove after first run
+  await supabase.from('digest_stories').delete().lt('created_at', new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString());
+  console.log('[CLEANUP] Deleted stories older than 3h');
+
   try {
     // -----------------------------------------------------------------------
     // Step 1: Fetch articles from all sources
