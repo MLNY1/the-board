@@ -351,8 +351,8 @@ export async function GET(req: NextRequest) {
   const log: string[] = [];
 
   // TEMPORARY ONE-TIME CLEANUP — remove after first run
-  await supabase.from('digest_stories').delete().lt('created_at', new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString());
-  console.log('[CLEANUP] Deleted stories older than 3h');
+  await supabase.from('digest_stories').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  console.log('[CLEANUP] Wiped all digest_stories');
 
   try {
     // -----------------------------------------------------------------------
