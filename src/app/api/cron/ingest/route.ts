@@ -34,23 +34,26 @@ import type {
 // Constants
 // ---------------------------------------------------------------------------
 
-const RSS_FEEDS = [
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+
+const RSS_FEEDS: Array<{ url: string; source: string; isIsrael: boolean; headers?: Record<string, string> }> = [
   { url: 'https://rsshub.app/apnews/topics/apf-topnews',          source: 'AP News',          isIsrael: false },
   { url: 'https://feeds.reuters.com/reuters/worldNews',            source: 'Reuters',           isIsrael: false },
   { url: 'https://feeds.bbci.co.uk/news/rss.xml',                 source: 'BBC',               isIsrael: false },
   { url: 'https://feeds.npr.org/1001/rss.xml',                    source: 'NPR',               isIsrael: false },
-  { url: 'https://www.aljazeera.com/xml/rss/all.xml',             source: 'Al Jazeera',        isIsrael: false },
   { url: 'http://rss.cnn.com/rss/edition.rss',                    source: 'CNN',               isIsrael: false },
   { url: 'https://moxie.foxnews.com/google-publisher/latest.xml', source: 'Fox News',          isIsrael: false },
   { url: 'https://feeds.nbcnews.com/nbcnews/public/news/world',   source: 'NBC News',          isIsrael: false },
-  // Israel-focused feeds
-  { url: 'https://www.jpost.com/rss/rssfeedsfrontpage.aspx',              source: 'Jerusalem Post',  isIsrael: true },
-  { url: 'https://www.timesofisrael.com/feed/',                           source: 'Times of Israel', isIsrael: true },
-  { url: 'https://www.ynetnews.com/category/3082/rss',                    source: 'Ynet',            isIsrael: true },
-  { url: 'https://www.israelhayom.com/feed/',                             source: 'Israel Hayom',    isIsrael: true },
-  { url: 'https://www.haaretz.com/srv/haaretz-latest-content',            source: 'Haaretz',         isIsrael: true },
-  { url: 'https://www.jta.org/feed',                                      source: 'JTA',             isIsrael: true },
-  { url: 'https://www.israelnationalnews.com/Rss/Rss.aspx/1',             source: 'Arutz Sheva',     isIsrael: true },
+  // Israel / Middle East feeds
+  { url: 'https://www.jpost.com/rss/rssfeedsfrontpage.aspx',       source: 'Jerusalem Post',  isIsrael: true },
+  { url: 'https://www.jta.org/feed',                               source: 'JTA',             isIsrael: true },
+  { url: 'https://www.israelhayom.com/feed/',                      source: 'Israel Hayom',    isIsrael: true },
+  { url: 'https://www.timesofisrael.com/feed/',                    source: 'Times of Israel', isIsrael: true, headers: { 'User-Agent': BROWSER_UA } },
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/MiddleEast.xml', source: 'NYT Middle East', isIsrael: true },
+  { url: 'https://feeds.washingtonpost.com/rss/world',             source: 'WashPost World',  isIsrael: true },
+  { url: 'https://www.aljazeera.com/xml/rss/all.xml',              source: 'Al Jazeera',      isIsrael: true },
+  { url: 'https://www.middleeasteye.net/rss',                      source: 'Middle East Eye', isIsrael: true },
+  { url: 'https://www.972mag.com/feed/',                           source: '+972 Magazine',   isIsrael: true },
 ];
 
 const AI_BATCH_SIZE = 20;
@@ -176,12 +179,14 @@ async function fetchRssArticles(): Promise<{ articles: RssArticle[]; debugLines:
   const debugLines: string[] = [];
 
   const results = await Promise.allSettled(
-    RSS_FEEDS.map(async ({ url, source, isIsrael }) => {
+    RSS_FEEDS.map(async ({ url, source, isIsrael, headers: extraHeaders }) => {
       let status = 0;
       let bodyPreview = '';
       try {
-        // Fetch manually so we can log HTTP status and body preview
-        const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        const res = await fetch(url, {
+          signal:  AbortSignal.timeout(10000),
+          headers: extraHeaders ?? {},
+        });
         status = res.status;
         const body = await res.text();
         bodyPreview = body.substring(0, 200);
@@ -340,7 +345,8 @@ export async function GET(req: NextRequest) {
     log.push(...debugLines);
 
     const ISRAEL_SOURCES = new Set([
-      'Times of Israel', 'Jerusalem Post', 'Ynet', 'Arutz Sheva', 'Haaretz', 'JTA', 'Israel Hayom',
+      'Jerusalem Post', 'JTA', 'Israel Hayom', 'Times of Israel',
+      'NYT Middle East', 'WashPost World', 'Al Jazeera', 'Middle East Eye', '+972 Magazine',
     ]);
     const sixHoursAgo    = Date.now() -  6 * 60 * 60 * 1000;
     const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
@@ -354,7 +360,7 @@ export async function GET(req: NextRequest) {
     const skippedOld = allFetched.length - allIncoming.length;
     log.push(`Fetched: ${rssArticles.length} RSS + ${newsApiArticles.length} NewsAPI = ${allFetched.length} total, skipped ${skippedOld} older than 6/12h`);
 
-    const israelSourceList = ['Jerusalem Post', 'Times of Israel', 'Ynet', 'Israel Hayom', 'Haaretz', 'JTA', 'Arutz Sheva'];
+    const israelSourceList = ['Jerusalem Post', 'JTA', 'Israel Hayom', 'Times of Israel', 'NYT Middle East', 'WashPost World', 'Al Jazeera', 'Middle East Eye', '+972 Magazine'];
     const israelCounts = israelSourceList.map(s => `${s}: ${allIncoming.filter(a => a.source_name === s).length}`).join(', ');
     log.push(`[Israel Feeds] ${israelCounts}`);
 
