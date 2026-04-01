@@ -610,21 +610,30 @@ export async function GET(req: NextRequest) {
     // Step 5: Prune raw_articles older than 72h to prevent DB bloat
     // -----------------------------------------------------------------------
     const cutoff72h = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
-    // Clear FK references before deleting to avoid constraint violation
-    const { error: nullifyError } = await supabase
+    // Get IDs of rows to be deleted, then nullify any FK references to them
+    // (including from newer rows that reference old ones) before deleting.
+    const { data: toDelete } = await supabase
       .from('raw_articles')
-      .update({ duplicate_of: null })
-      .lt('fetched_at', cutoff72h)
-      .not('duplicate_of', 'is', null);
-    if (nullifyError) log.push(`Prune nullify error: ${nullifyError.message}`);
-
-    const { error: pruneError } = await supabase
-      .from('raw_articles')
-      .delete()
+      .select('id')
       .lt('fetched_at', cutoff72h);
+    const toDeleteIds = (toDelete ?? []).map((r) => r.id);
 
-    if (pruneError) log.push(`Prune error: ${pruneError.message}`);
-    else log.push('Pruned old articles');
+    if (toDeleteIds.length > 0) {
+      await supabase
+        .from('raw_articles')
+        .update({ duplicate_of: null })
+        .in('duplicate_of', toDeleteIds);
+
+      const { error: pruneError } = await supabase
+        .from('raw_articles')
+        .delete()
+        .lt('fetched_at', cutoff72h);
+
+      if (pruneError) log.push(`Prune error: ${pruneError.message}`);
+      else log.push(`Pruned ${toDeleteIds.length} old articles`);
+    } else {
+      log.push('No old articles to prune');
+    }
 
     // -----------------------------------------------------------------------
     // Done
