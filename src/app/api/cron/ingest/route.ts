@@ -609,14 +609,25 @@ export async function GET(req: NextRequest) {
     // -----------------------------------------------------------------------
     // Step 5: Prune raw_articles older than 72h to prevent DB bloat
     // -----------------------------------------------------------------------
+    // Prune in batches of 500 to avoid statement timeouts on large tables.
     const cutoff72h = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
-    const { error: pruneError } = await supabase
-      .from('raw_articles')
-      .delete()
-      .lt('fetched_at', cutoff72h);
-
-    if (pruneError) log.push(`Prune error: ${pruneError.message}`);
-    else log.push('Pruned old articles');
+    let pruneTotal = 0;
+    let pruneErr: string | null = null;
+    for (let i = 0; i < 20; i++) {
+      const { data: batch } = await supabase
+        .from('raw_articles')
+        .select('id')
+        .lt('fetched_at', cutoff72h)
+        .limit(500);
+      if (!batch || batch.length === 0) break;
+      const ids = batch.map((r) => r.id);
+      const { error } = await supabase.from('raw_articles').delete().in('id', ids);
+      if (error) { pruneErr = error.message; break; }
+      pruneTotal += ids.length;
+      if (ids.length < 500) break;
+    }
+    if (pruneErr) log.push(`Prune error: ${pruneErr}`);
+    else log.push(`Pruned ${pruneTotal} old articles`);
 
     // -----------------------------------------------------------------------
     // Done
