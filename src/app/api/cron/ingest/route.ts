@@ -320,8 +320,14 @@ export async function GET(req: NextRequest) {
       fetchNewsApiArticles(category),
     ]);
 
-    const allIncoming = [...rssArticles, ...newsApiArticles];
-    log.push(`Fetched: ${rssArticles.length} RSS + ${newsApiArticles.length} NewsAPI = ${allIncoming.length} total`);
+    const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
+    const allFetched = [...rssArticles, ...newsApiArticles];
+    const allIncoming = allFetched.filter(a => {
+      if (!a.published_at) return true;
+      return new Date(a.published_at).getTime() > sixHoursAgo;
+    });
+    const skippedOld = allFetched.length - allIncoming.length;
+    log.push(`Fetched: ${rssArticles.length} RSS + ${newsApiArticles.length} NewsAPI = ${allFetched.length} total, skipped ${skippedOld} older than 6h`);
 
     // -----------------------------------------------------------------------
     // Step 2: Deduplication against last 24h of DB articles
