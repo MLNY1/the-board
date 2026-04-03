@@ -492,9 +492,16 @@ export async function GET(req: NextRequest) {
       // ── Guard 4: pre-filter articles already covered by existing stories ───
       const { data: existingStories } = await supabase
         .from('digest_stories')
-        .select('headline');
+        .select('headline, topic_slug, source_names');
 
       const existingHeadlines = (existingStories ?? []).map(s => s.headline as string);
+
+      // Count how many stories each source already has in the digest.
+      const existingSourceCounts = new Map<string, number>();
+      for (const s of existingStories ?? []) {
+        const primary = ((s as { source_names?: string[] }).source_names ?? [])[0] ?? '';
+        if (primary) existingSourceCounts.set(primary, (existingSourceCounts.get(primary) ?? 0) + 1);
+      }
       const coveredIds: string[] = [];
 
       const toSendToClaude = toProcess.filter(article => {
@@ -641,42 +648,41 @@ export async function GET(req: NextRequest) {
       }
       if (entityDropped > 0) log.push(`[Dedup] Entity pass removed ${entityDropped} near-duplicate stories`);
 
-      // Source cap: keep at most 3 stories per primary source, ranked by score.
+      // Cross-run filter: source cap + keyword dedup + topic_slug dedup,
+      // all enforced against what's already in the digest (not just this batch).
       const SOURCE_CAP = 3;
-      const sourceCounts = new Map<string, number>();
-      const cappedStories: ClaudeStory[] = [];
-      for (const story of entityKept) {
-        const src = primarySource(story);
-        const count = sourceCounts.get(src) ?? 0;
-        if (count < SOURCE_CAP) {
-          cappedStories.push(story);
-          sourceCounts.set(src, count + 1);
-        } else {
-          if (count === SOURCE_CAP) {
-            const dropped = entityKept.filter(s => primarySource(s) === src).length - SOURCE_CAP;
-            log.push(`[SourceCap] Capped ${src || 'unknown'}: kept ${SOURCE_CAP}, dropped ${dropped}`);
-            sourceCounts.set(src, SOURCE_CAP + 1); // prevent logging again for same source
-          }
-        }
-      }
+      const existingTopicSlugs = new Set(
+        (existingStories ?? []).map(s => (s as { topic_slug?: string }).topic_slug).filter(Boolean)
+      );
+      // Start source counts from what's already in the DB, then add this batch.
+      const runSourceCounts = new Map(existingSourceCounts);
 
-      // Cross-run dedup: drop new stories whose stemmed keywords (3+) match an
-      // existing digest_stories headline — catches inter-run near-duplicates that
-      // within-batch passes miss (e.g. 10 variations of "Iran launches X at Y").
-      const existingTopicSlugs = new Set((existingStories ?? []).map(s => (s as { topic_slug?: string }).topic_slug).filter(Boolean));
-      const crossRunFiltered = cappedStories.filter(story => {
+      const crossRunFiltered = entityKept.filter(story => {
+        const src = primarySource(story);
+
+        // 1. Per-source cap across runs
+        if ((runSourceCounts.get(src) ?? 0) >= SOURCE_CAP) {
+          log.push(`[SourceCap] Dropped (${src}): already ${runSourceCounts.get(src)} in digest`);
+          return false;
+        }
+
+        // 2. topic_slug already in digest
         if (story.topic_slug && existingTopicSlugs.has(story.topic_slug)) return false;
+
+        // 3. Stemmed keyword overlap with existing headlines
         const newKW = stemmedKeyWords(story.headline);
-        return !existingHeadlines.some(h => {
+        if (existingHeadlines.some(h => {
           const exKW = new Set(stemmedKeyWords(h));
           return newKW.filter(w => exKW.has(w)).length >= 3;
-        });
+        })) return false;
+
+        runSourceCounts.set(src, (runSourceCounts.get(src) ?? 0) + 1);
+        existingHeadlines.push(story.headline); // block duplicates within this batch too
+        return true;
       });
-      const crossDropped = cappedStories.length - crossRunFiltered.length;
-      if (crossDropped > 0) log.push(`[Dedup] Cross-run removed ${crossDropped} stories already in digest`);
 
       const removedCount = stories.length - crossRunFiltered.length;
-      if (removedCount > 0) log.push(`[Dedup] ${removedCount} total removed (${stories.length} raw → ${crossRunFiltered.length} final)`);
+      if (removedCount > 0) log.push(`[Dedup] ${removedCount} removed (${stories.length} raw → ${crossRunFiltered.length} final)`);
 
       // Build a lookup: article_id → source info
       const articleLookup = new Map(toSendToClaude.map((a) => [a.id, a]));
