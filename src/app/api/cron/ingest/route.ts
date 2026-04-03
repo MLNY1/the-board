@@ -479,6 +479,36 @@ export async function GET(req: NextRequest) {
         .lt('created_at', cutoff12h);
       if (staleErr) log.push(`Stale digest clear error: ${staleErr.message}`);
 
+      // ── Enforce source cap retroactively ─────────────────────────────────
+      // Fetch all live stories grouped by source; delete excess beyond SOURCE_CAP,
+      // keeping the highest-scored ones. Fixes any over-cap state from before this
+      // logic existed.
+      const ENFORCE_CAP = 4;
+      const { data: allLive } = await supabase
+        .from('digest_stories')
+        .select('id, source_names, importance_score')
+        .order('importance_score', { ascending: false });
+
+      const liveBySource = new Map<string, { id: string; importance_score: number }[]>();
+      for (const s of allLive ?? []) {
+        const src = ((s as { source_names?: string[] }).source_names ?? [])[0] ?? '';
+        if (!src) continue;
+        if (!liveBySource.has(src)) liveBySource.set(src, []);
+        liveBySource.get(src)!.push({ id: s.id, importance_score: s.importance_score });
+      }
+      const overCapIds: string[] = [];
+      for (const [src, srcStories] of liveBySource) {
+        if (srcStories.length > ENFORCE_CAP) {
+          // Already sorted desc by score; drop the tail beyond cap
+          const excess = srcStories.slice(ENFORCE_CAP);
+          overCapIds.push(...excess.map(s => s.id));
+          log.push(`[CapEnforce] ${src}: removing ${excess.length} over-cap stories`);
+        }
+      }
+      if (overCapIds.length > 0) {
+        await supabase.from('digest_stories').delete().in('id', overCapIds);
+      }
+
       // ── Guard 3: hard cap on current live stories ─────────────────────────
       const { count: storiesToday } = await supabase
         .from('digest_stories')
