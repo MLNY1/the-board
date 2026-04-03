@@ -452,7 +452,7 @@ export async function GET(req: NextRequest) {
     const toProcess = [...(unprocessed ?? [])];
 
     // Supplement with unprocessed JP articles from last 24h so JP always has raw material
-    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const since24hJP = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const existingToProcessIds = new Set(toProcess.map(a => a.id));
     const { data: jpExtra } = await supabase
       .from('raw_articles')
@@ -460,7 +460,7 @@ export async function GET(req: NextRequest) {
       .eq('source_name', 'Jerusalem Post')
       .eq('processed', false)
       .is('duplicate_of', null)
-      .gte('fetched_at', since24h)
+      .gte('fetched_at', since24hJP)
       .order('fetched_at', { ascending: false })
       .limit(10);
     for (const a of jpExtra ?? []) {
@@ -521,15 +521,15 @@ export async function GET(req: NextRequest) {
         liveBySource.get(src)!.push({ id: s.id, importance_score: s.importance_score });
       }
       const overCapIds: string[] = [];
-      for (const [src, srcStories] of liveBySource) {
-        if (src === 'Jerusalem Post') continue; // JP has guaranteed floor, never auto-trimmed
+      Array.from(liveBySource.entries()).forEach(([src, srcStories]) => {
+        if (src === 'Jerusalem Post') return; // JP has guaranteed floor, never auto-trimmed
         if (srcStories.length > ENFORCE_CAP) {
           // Already sorted desc by score; drop the tail beyond cap
           const excess = srcStories.slice(ENFORCE_CAP);
           overCapIds.push(...excess.map(s => s.id));
           log.push(`[CapEnforce] ${src}: removing ${excess.length} over-cap stories`);
         }
-      }
+      });
       if (overCapIds.length > 0) {
         await supabase.from('digest_stories').delete().in('id', overCapIds);
       }
@@ -563,7 +563,7 @@ export async function GET(req: NextRequest) {
         existingSourceStories.get(primary)!.push(s);
       }
       const existingSourceCounts = new Map<string, number>(
-        [...existingSourceStories.entries()].map(([src, arr]) => [src, arr.length])
+        Array.from(existingSourceStories.entries()).map(([src, arr]) => [src, arr.length] as [string, number])
       );
       const coveredIds: string[] = [];
       const jpCurrentCount = existingSourceStories.get('Jerusalem Post')?.length ?? 0;
