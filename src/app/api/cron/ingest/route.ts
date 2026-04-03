@@ -650,7 +650,7 @@ export async function GET(req: NextRequest) {
 
       // Cross-run filter: source cap + keyword dedup + topic_slug dedup,
       // all enforced against what's already in the digest (not just this batch).
-      const SOURCE_CAP = 3;
+      const SOURCE_CAP = 4;
       const existingTopicSlugs = new Set(
         (existingStories ?? []).map(s => (s as { topic_slug?: string }).topic_slug).filter(Boolean)
       );

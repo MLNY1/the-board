@@ -20,15 +20,22 @@ import { getActiveWindow, type GeoParams } from './shabbos-times';
  */
 export async function isWeekdayYomTov(zip: string, geo?: GeoParams): Promise<boolean> {
   try {
+    const now       = new Date();
+    const dayOfWeek = now.getDay(); // 0 Sun … 6 Sat
+    const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+    if (!isWeekday) return false;
+
+    // Check Yom Tov windows directly — avoids a false negative when Hebcal
+    // merges a Yom Tov + Shabbat into one combined window named "Shabbat"
+    // (e.g. Pesach I starting Wednesday and ending Sunday).
+    const { getYomTovWindows } = await import('./shabbos-times');
+    const ytWindows = await getYomTovWindows(zip, geo);
+    if (ytWindows.some(w => now >= w.start && now <= w.end)) return true;
+
+    // Fallback: active window that isn't Shabbat
     const active = await getActiveWindow(zip, geo);
     if (!active) return false;
-
-    // Active window whose name doesn't start with "Shabbat" = Yom Tov
-    const isYomTov  = !active.name.startsWith('Shabbat');
-    const dayOfWeek = new Date().getDay(); // 0 Sun … 6 Sat
-    const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
-
-    return isYomTov && isWeekday;
+    return !active.name.startsWith('Shabbat');
   } catch {
     return false;
   }
