@@ -496,17 +496,9 @@ export async function GET(req: NextRequest) {
 
       const existingHeadlines = (existingStories ?? []).map(s => s.headline as string);
 
-      // Count per-source cap using only stories from the last 2h.
-      // This lets slots reopen as stories age, so the board refreshes throughout
-      // the 12h cycle rather than stalling after the first few runs.
-      const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
-      const { data: recentStories } = await supabase
-        .from('digest_stories')
-        .select('source_names')
-        .gte('created_at', fourHoursAgo);
-
+      // Hard per-source cap across all live stories (full 12h window).
       const existingSourceCounts = new Map<string, number>();
-      for (const s of recentStories ?? []) {
+      for (const s of existingStories ?? []) {
         const primary = ((s as { source_names?: string[] }).source_names ?? [])[0] ?? '';
         if (primary) existingSourceCounts.set(primary, (existingSourceCounts.get(primary) ?? 0) + 1);
       }
