@@ -101,10 +101,18 @@ export async function GET(req: NextRequest) {
       seenIds.add(story.id);
     }
 
-    // Rebuild deduplicated list, preserving score order
-    const deduped = (stories ?? []).filter(
+    // Rebuild deduplicated list, then re-sort by time-decayed score.
+    // Decay: 4 points per hour, so a 90-pt story at 10h old (score 50) loses
+    // to a 70-pt story from now (score 70). Keeps fresh news at the top.
+    const DECAY_PER_HOUR = 4;
+    const effectiveScore = (s: DigestStory) => {
+      const ageHours = (now.getTime() - new Date(s.created_at).getTime()) / 3_600_000;
+      return s.importance_score - ageHours * DECAY_PER_HOUR;
+    };
+
+    const deduped = ((stories ?? []).filter(
       (s) => seenIds.has(s.id) && (!s.topic_slug || seenSlugs.get(s.topic_slug)?.id === s.id)
-    ) as DigestStory[];
+    ) as DigestStory[]).sort((a, b) => effectiveScore(b) - effectiveScore(a));
 
     // -----------------------------------------------------------------------
     // Market data (only when weekday yom tov or ?market=true)
