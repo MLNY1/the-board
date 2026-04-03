@@ -376,13 +376,18 @@ export async function GET(req: NextRequest) {
       'Jerusalem Post', 'JTA', 'Israel Hayom',
       'NYT Middle East', 'WashPost World', 'Al Jazeera', 'Middle East Eye', '+972 Magazine',
     ]);
-    const sixHoursAgo    = Date.now() -  6 * 60 * 60 * 1000;
-    const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
+    const JP_FLOOR = 4; // guaranteed minimum Jerusalem Post stories on the board
+    const sixHoursAgo        = Date.now() -  6 * 60 * 60 * 1000;
+    const twelveHoursAgo     = Date.now() - 12 * 60 * 60 * 1000;
+    const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
     const allFetched = [...rssArticles, ...newsApiArticles];
     const allIncoming = allFetched.filter(a => {
       if (!a.published_at) return true;
       const published = new Date(a.published_at).getTime();
-      const cutoff = ISRAEL_SOURCES.has(a.source_name ?? '') ? twelveHoursAgo : sixHoursAgo;
+      // JP gets a 24h window; other Israel sources 12h; general 6h
+      const cutoff = a.source_name === 'Jerusalem Post' ? twentyFourHoursAgo
+                   : ISRAEL_SOURCES.has(a.source_name ?? '') ? twelveHoursAgo
+                   : sixHoursAgo;
       return published > cutoff;
     });
     const skippedOld = allFetched.length - allIncoming.length;
@@ -444,7 +449,26 @@ export async function GET(req: NextRequest) {
       .order('fetched_at', { ascending: false })
       .limit(AI_BATCH_SIZE);
 
-    const toProcess = unprocessed ?? [];
+    const toProcess = [...(unprocessed ?? [])];
+
+    // Supplement with unprocessed JP articles from last 24h so JP always has raw material
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const existingToProcessIds = new Set(toProcess.map(a => a.id));
+    const { data: jpExtra } = await supabase
+      .from('raw_articles')
+      .select('id, title, description, content, source_name, source_url, published_at, image_url')
+      .eq('source_name', 'Jerusalem Post')
+      .eq('processed', false)
+      .is('duplicate_of', null)
+      .gte('fetched_at', since24h)
+      .order('fetched_at', { ascending: false })
+      .limit(10);
+    for (const a of jpExtra ?? []) {
+      if (!existingToProcessIds.has(a.id)) toProcess.push(a);
+    }
+    if ((jpExtra ?? []).length > 0)
+      log.push(`JP top-up: added ${(jpExtra ?? []).filter(a => !existingToProcessIds.has(a.id)).length} extra JP articles`);
+
     log.push(`Articles to AI-process: ${toProcess.length}`);
 
     if (toProcess.length > 0) {
@@ -498,6 +522,7 @@ export async function GET(req: NextRequest) {
       }
       const overCapIds: string[] = [];
       for (const [src, srcStories] of liveBySource) {
+        if (src === 'Jerusalem Post') continue; // JP has guaranteed floor, never auto-trimmed
         if (srcStories.length > ENFORCE_CAP) {
           // Already sorted desc by score; drop the tail beyond cap
           const excess = srcStories.slice(ENFORCE_CAP);
@@ -541,8 +566,13 @@ export async function GET(req: NextRequest) {
         [...existingSourceStories.entries()].map(([src, arr]) => [src, arr.length])
       );
       const coveredIds: string[] = [];
+      const jpCurrentCount = existingSourceStories.get('Jerusalem Post')?.length ?? 0;
 
       const toSendToClaude = toProcess.filter(article => {
+        const isJP = article.source_name === 'Jerusalem Post';
+        // JP articles bypass coverage pre-filter when JP is below its guaranteed floor
+        if (isJP && jpCurrentCount < JP_FLOOR) return true;
+
         const articleKW = stemmedKeyWords(article.title);
         const covered = existingHeadlines.some(h => {
           if (jaccardSimilarity(article.title, h) > 0.4) return true;
@@ -695,11 +725,16 @@ export async function GET(req: NextRequest) {
       // Track stories to displace (replaced by a higher-scored new story).
       const storiesToDisplace: string[] = [];
 
+      // Track JP count as stories are added during this batch
+      let jpBatchCount = jpCurrentCount;
+
       const crossRunFiltered = entityKept.filter(story => {
         const src = primarySource(story);
+        const isJP = src === 'Jerusalem Post';
+        const jpBelowFloor = isJP && jpBatchCount < JP_FLOOR;
 
-        // 1. Per-source cap — allow displacement if new story beats the weakest existing
-        if ((runSourceCounts.get(src) ?? 0) >= SOURCE_CAP) {
+        // 1. Per-source cap — JP below floor bypasses cap entirely
+        if (!jpBelowFloor && (runSourceCounts.get(src) ?? 0) >= SOURCE_CAP) {
           const srcStories = existingSourceStories.get(src) ?? [];
           const weakest = srcStories.reduce((min, s) => s.importance_score < min.importance_score ? s : min, srcStories[0]);
           if (!weakest || story.importance_score <= weakest.importance_score) {
@@ -712,18 +747,21 @@ export async function GET(req: NextRequest) {
           log.push(`[SourceCap] Displaced (${src}) score ${weakest.importance_score} for new score ${story.importance_score}`);
         }
 
-        // 2. topic_slug already in digest
-        if (story.topic_slug && existingTopicSlugs.has(story.topic_slug)) return false;
+        // 2. topic_slug already in digest — JP below floor bypasses
+        if (!jpBelowFloor && story.topic_slug && existingTopicSlugs.has(story.topic_slug)) return false;
 
-        // 3. Stemmed keyword overlap with existing headlines
-        const newKW = stemmedKeyWords(story.headline);
-        if (existingHeadlines.some(h => {
-          const exKW = new Set(stemmedKeyWords(h));
-          return newKW.filter(w => exKW.has(w)).length >= 3;
-        })) return false;
+        // 3. Stemmed keyword overlap — JP below floor bypasses
+        if (!jpBelowFloor) {
+          const newKW = stemmedKeyWords(story.headline);
+          if (existingHeadlines.some(h => {
+            const exKW = new Set(stemmedKeyWords(h));
+            return newKW.filter(w => exKW.has(w)).length >= 3;
+          })) return false;
+        }
 
         runSourceCounts.set(src, (runSourceCounts.get(src) ?? 0) + 1);
-        existingHeadlines.push(story.headline); // block duplicates within this batch too
+        existingHeadlines.push(story.headline);
+        if (isJP) jpBatchCount++;
         return true;
       });
 
