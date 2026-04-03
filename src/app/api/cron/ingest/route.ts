@@ -136,6 +136,15 @@ function extractKeyWords(headline: string): string[] {
     .slice(0, 5);
 }
 
+// Crude stemmer: strips common suffixes so drone/drones, launch/launches match.
+function stemWord(w: string): string {
+  return w.replace(/(?:ing|ed|ers?|es|s)$/, '');
+}
+
+function stemmedKeyWords(headline: string): string[] {
+  return extractKeyWords(headline).map(stemWord);
+}
+
 const KNOWN_ENTITIES = new Set([
   'UK', 'US', 'EU', 'UN', 'NATO', 'Iran', 'Israel', 'Gaza', 'Hamas',
   'Hezbollah', 'IDF', 'China', 'Russia', 'Ukraine', 'Syria', 'Lebanon',
@@ -489,7 +498,12 @@ export async function GET(req: NextRequest) {
       const coveredIds: string[] = [];
 
       const toSendToClaude = toProcess.filter(article => {
-        const covered = existingHeadlines.some(h => jaccardSimilarity(article.title, h) > 0.5);
+        const articleKW = stemmedKeyWords(article.title);
+        const covered = existingHeadlines.some(h => {
+          if (jaccardSimilarity(article.title, h) > 0.4) return true;
+          const storyKW = new Set(stemmedKeyWords(h));
+          return articleKW.filter(w => storyKW.has(w)).length >= 3;
+        });
         if (covered) coveredIds.push(article.id);
         return !covered;
       });
@@ -646,14 +660,29 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const removedCount = stories.length - cappedStories.length;
-      if (removedCount > 0) log.push(`[Dedup] Removed ${removedCount} total stories (${stories.length} → ${cappedStories.length})`);
+      // Cross-run dedup: drop new stories whose stemmed keywords (3+) match an
+      // existing digest_stories headline — catches inter-run near-duplicates that
+      // within-batch passes miss (e.g. 10 variations of "Iran launches X at Y").
+      const existingTopicSlugs = new Set((existingStories ?? []).map(s => (s as { topic_slug?: string }).topic_slug).filter(Boolean));
+      const crossRunFiltered = cappedStories.filter(story => {
+        if (story.topic_slug && existingTopicSlugs.has(story.topic_slug)) return false;
+        const newKW = stemmedKeyWords(story.headline);
+        return !existingHeadlines.some(h => {
+          const exKW = new Set(stemmedKeyWords(h));
+          return newKW.filter(w => exKW.has(w)).length >= 3;
+        });
+      });
+      const crossDropped = cappedStories.length - crossRunFiltered.length;
+      if (crossDropped > 0) log.push(`[Dedup] Cross-run removed ${crossDropped} stories already in digest`);
+
+      const removedCount = stories.length - crossRunFiltered.length;
+      if (removedCount > 0) log.push(`[Dedup] ${removedCount} total removed (${stories.length} raw → ${crossRunFiltered.length} final)`);
 
       // Build a lookup: article_id → source info
       const articleLookup = new Map(toSendToClaude.map((a) => [a.id, a]));
 
-      if (cappedStories.length > 0) {
-        const digestRows = cappedStories.map((story) => {
+      if (crossRunFiltered.length > 0) {
+        const digestRows = crossRunFiltered.map((story) => {
           const sourceArticles = story.article_ids
             .map((id) => articleLookup.get(id))
             .filter(Boolean) as typeof toProcess;
@@ -692,7 +721,7 @@ export async function GET(req: NextRequest) {
         if (digestError) {
           log.push(`Digest insert error: ${digestError.message}`);
         } else {
-          log.push(`Inserted ${digestRows.length} digest stories (${stories.length} raw from Claude)`);
+          log.push(`Inserted ${digestRows.length} digest stories`);
         }
       }
 
