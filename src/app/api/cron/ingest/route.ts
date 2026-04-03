@@ -492,16 +492,24 @@ export async function GET(req: NextRequest) {
       // ── Guard 4: pre-filter articles already covered by existing stories ───
       const { data: existingStories } = await supabase
         .from('digest_stories')
-        .select('headline, topic_slug, source_names');
+        .select('id, headline, topic_slug, source_names, importance_score');
 
-      const existingHeadlines = (existingStories ?? []).map(s => s.headline as string);
+      type ExistingStory = { id: string; headline: string; topic_slug?: string; source_names?: string[]; importance_score: number };
+      const existing = (existingStories ?? []) as ExistingStory[];
 
-      // Hard per-source cap across all live stories (full 12h window).
-      const existingSourceCounts = new Map<string, number>();
-      for (const s of existingStories ?? []) {
-        const primary = ((s as { source_names?: string[] }).source_names ?? [])[0] ?? '';
-        if (primary) existingSourceCounts.set(primary, (existingSourceCounts.get(primary) ?? 0) + 1);
+      const existingHeadlines = existing.map(s => s.headline);
+
+      // Build per-source story list for displacement logic.
+      const existingSourceStories = new Map<string, ExistingStory[]>();
+      for (const s of existing) {
+        const primary = (s.source_names ?? [])[0] ?? '';
+        if (!primary) continue;
+        if (!existingSourceStories.has(primary)) existingSourceStories.set(primary, []);
+        existingSourceStories.get(primary)!.push(s);
       }
+      const existingSourceCounts = new Map<string, number>(
+        [...existingSourceStories.entries()].map(([src, arr]) => [src, arr.length])
+      );
       const coveredIds: string[] = [];
 
       const toSendToClaude = toProcess.filter(article => {
@@ -651,19 +659,27 @@ export async function GET(req: NextRequest) {
       // Cross-run filter: source cap + keyword dedup + topic_slug dedup,
       // all enforced against what's already in the digest (not just this batch).
       const SOURCE_CAP = 4;
-      const existingTopicSlugs = new Set(
-        (existingStories ?? []).map(s => (s as { topic_slug?: string }).topic_slug).filter(Boolean)
-      );
+      const existingTopicSlugs = new Set(existing.map(s => s.topic_slug).filter(Boolean));
       // Start source counts from what's already in the DB, then add this batch.
       const runSourceCounts = new Map(existingSourceCounts);
+      // Track stories to displace (replaced by a higher-scored new story).
+      const storiesToDisplace: string[] = [];
 
       const crossRunFiltered = entityKept.filter(story => {
         const src = primarySource(story);
 
-        // 1. Per-source cap across runs
+        // 1. Per-source cap — allow displacement if new story beats the weakest existing
         if ((runSourceCounts.get(src) ?? 0) >= SOURCE_CAP) {
-          log.push(`[SourceCap] Dropped (${src}): already ${runSourceCounts.get(src)} in digest`);
-          return false;
+          const srcStories = existingSourceStories.get(src) ?? [];
+          const weakest = srcStories.reduce((min, s) => s.importance_score < min.importance_score ? s : min, srcStories[0]);
+          if (!weakest || story.importance_score <= weakest.importance_score) {
+            log.push(`[SourceCap] Dropped (${src}): at cap, score ${story.importance_score} ≤ weakest ${weakest?.importance_score}`);
+            return false;
+          }
+          // Displace the weakest story and take its slot
+          storiesToDisplace.push(weakest.id);
+          existingSourceStories.get(src)!.splice(existingSourceStories.get(src)!.indexOf(weakest), 1);
+          log.push(`[SourceCap] Displaced (${src}) score ${weakest.importance_score} for new score ${story.importance_score}`);
         }
 
         // 2. topic_slug already in digest
@@ -728,6 +744,16 @@ export async function GET(req: NextRequest) {
           log.push(`Digest insert error: ${digestError.message}`);
         } else {
           log.push(`Inserted ${digestRows.length} digest stories`);
+        }
+
+        // Delete any stories displaced by higher-scored replacements
+        if (storiesToDisplace.length > 0) {
+          const { error: displaceErr } = await supabase
+            .from('digest_stories')
+            .delete()
+            .in('id', storiesToDisplace);
+          if (displaceErr) log.push(`Displace delete error: ${displaceErr.message}`);
+          else log.push(`[SourceCap] Displaced ${storiesToDisplace.length} weaker stories`);
         }
       }
 
