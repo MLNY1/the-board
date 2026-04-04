@@ -101,6 +101,23 @@ export async function GET(req: NextRequest) {
       seenIds.add(story.id);
     }
 
+    // Headline similarity dedup — catches near-duplicates that share a topic_slug
+    // or slipped through ingest dedup with different slugs.
+    const headlineSeen: DigestStory[] = [];
+    const headlineJaccard = (a: string, b: string) => {
+      const words = (s: string) => new Set(s.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean));
+      const aW = words(a); const bW = words(b);
+      const intersection = Array.from(aW).filter(w => bW.has(w)).length;
+      const union = new Set([...Array.from(aW), ...Array.from(bW)]).size;
+      return union > 0 ? intersection / union : 0;
+    };
+    for (const story of (stories ?? []) as DigestStory[]) {
+      if (!seenIds.has(story.id)) continue;
+      if (!story.topic_slug || seenSlugs.get(story.topic_slug)?.id !== story.id) continue;
+      if (headlineSeen.some(k => headlineJaccard(story.headline, k.headline) >= 0.4)) continue;
+      headlineSeen.push(story);
+    }
+
     // Rebuild deduplicated list, then re-sort by time-decayed score.
     // Decay: 4 points per hour, so a 90-pt story at 10h old (score 50) loses
     // to a 70-pt story from now (score 70). Keeps fresh news at the top.
@@ -110,9 +127,7 @@ export async function GET(req: NextRequest) {
       return s.importance_score - ageHours * DECAY_PER_HOUR;
     };
 
-    const deduped = ((stories ?? []).filter(
-      (s) => seenIds.has(s.id) && (!s.topic_slug || seenSlugs.get(s.topic_slug)?.id === s.id)
-    ) as DigestStory[]).sort((a, b) => effectiveScore(b) - effectiveScore(a));
+    const deduped = headlineSeen.sort((a, b) => effectiveScore(b) - effectiveScore(a));
 
     // -----------------------------------------------------------------------
     // Market data (only when weekday yom tov or ?market=true)

@@ -133,7 +133,7 @@ function extractKeyWords(headline: string): string[] {
     .replace(/[^\w\s]/g, '')
     .split(/\s+/)
     .filter(w => w.length > 2 && !STOP_WORDS.has(w))
-    .slice(0, 5);
+    .slice(0, 8);
 }
 
 // Crude stemmer: strips common suffixes so drone/drones, launch/launches match.
@@ -535,6 +535,33 @@ export async function GET(req: NextRequest) {
         await supabase.from('digest_stories').delete().in('id', overCapIds);
       }
 
+      // ── Retroactive headline dedup ────────────────────────────────────────
+      // Remove near-duplicate headlines from existing stories, keeping the
+      // highest-scored version of each topic. Fixes duplicates that slipped
+      // through in previous runs.
+      const liveForDedup = (allLive ?? []).filter(s => !overCapIds.includes(s.id)) as
+        { id: string; importance_score: number; source_names?: string[] }[];
+      // Fetch headlines for dedup (allLive didn't include them)
+      const { data: liveHeadlines } = await supabase
+        .from('digest_stories')
+        .select('id, headline, importance_score')
+        .order('importance_score', { ascending: false });
+
+      const headlineDupIds: string[] = [];
+      const keptHeadlineStories: { id: string; headline: string; importance_score: number }[] = [];
+      for (const s of liveHeadlines ?? []) {
+        const story = s as { id: string; headline: string; importance_score: number };
+        const isDup = keptHeadlineStories.some(
+          k => jaccardSimilarity(story.headline, k.headline) >= 0.4
+        );
+        if (isDup) headlineDupIds.push(story.id);
+        else keptHeadlineStories.push(story);
+      }
+      if (headlineDupIds.length > 0) {
+        await supabase.from('digest_stories').delete().in('id', headlineDupIds);
+        log.push(`[HeadlineDedup] Removed ${headlineDupIds.length} near-duplicate headlines`);
+      }
+
       // ── Guard 3: hard cap on current live stories ─────────────────────────
       const { count: storiesToday } = await supabase
         .from('digest_stories')
@@ -735,7 +762,7 @@ export async function GET(req: NextRequest) {
         const isJP = src === 'Jerusalem Post';
         const jpBelowFloor = isJP && jpBatchCount < JP_FLOOR;
 
-        // 1. Per-source cap — JP below floor bypasses cap entirely
+        // 1. Per-source cap — JP below floor bypasses cap only
         if (!jpBelowFloor && (runSourceCounts.get(src) ?? 0) >= getSourceCap(src)) {
           const srcStories = existingSourceStories.get(src) ?? [];
           const weakest = srcStories.reduce((min, s) => s.importance_score < min.importance_score ? s : min, srcStories[0]);
@@ -743,23 +770,26 @@ export async function GET(req: NextRequest) {
             log.push(`[SourceCap] Dropped (${src}): at cap, score ${story.importance_score} ≤ weakest ${weakest?.importance_score}`);
             return false;
           }
-          // Displace the weakest story and take its slot
           storiesToDisplace.push(weakest.id);
           existingSourceStories.get(src)!.splice(existingSourceStories.get(src)!.indexOf(weakest), 1);
           log.push(`[SourceCap] Displaced (${src}) score ${weakest.importance_score} for new score ${story.importance_score}`);
         }
 
-        // 2. topic_slug already in digest — JP below floor bypasses
-        if (!jpBelowFloor && story.topic_slug && existingTopicSlugs.has(story.topic_slug)) return false;
-
-        // 3. Stemmed keyword overlap — JP below floor bypasses
-        if (!jpBelowFloor) {
-          const newKW = stemmedKeyWords(story.headline);
-          if (existingHeadlines.some(h => {
-            const exKW = new Set(stemmedKeyWords(h));
-            return newKW.filter(w => exKW.has(w)).length >= 3;
-          })) return false;
+        // 2. Headline Jaccard similarity against all existing headlines (all sources)
+        if (existingHeadlines.some(h => jaccardSimilarity(story.headline, h) >= 0.4)) {
+          log.push(`[Dedup] Jaccard drop: "${story.headline.slice(0, 60)}"`);
+          return false;
         }
+
+        // 3. topic_slug already in digest
+        if (story.topic_slug && existingTopicSlugs.has(story.topic_slug)) return false;
+
+        // 4. Stemmed keyword overlap (3+ of 8 meaningful words)
+        const newKW = stemmedKeyWords(story.headline);
+        if (existingHeadlines.some(h => {
+          const exKW = new Set(stemmedKeyWords(h));
+          return newKW.filter(w => exKW.has(w)).length >= 3;
+        })) return false;
 
         runSourceCounts.set(src, (runSourceCounts.get(src) ?? 0) + 1);
         existingHeadlines.push(story.headline);
