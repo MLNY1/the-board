@@ -508,6 +508,7 @@ export async function GET(req: NextRequest) {
       // keeping the highest-scored ones. Fixes any over-cap state from before this
       // logic existed.
       const ENFORCE_CAP = 4;
+      const SOURCE_CAP_OVERRIDES: Record<string, number> = { 'Middle East Eye': 2 };
       const { data: allLive } = await supabase
         .from('digest_stories')
         .select('id, source_names, importance_score')
@@ -523,11 +524,11 @@ export async function GET(req: NextRequest) {
       const overCapIds: string[] = [];
       Array.from(liveBySource.entries()).forEach(([src, srcStories]) => {
         if (src === 'Jerusalem Post') return; // JP has guaranteed floor, never auto-trimmed
-        if (srcStories.length > ENFORCE_CAP) {
-          // Already sorted desc by score; drop the tail beyond cap
-          const excess = srcStories.slice(ENFORCE_CAP);
+        const cap = SOURCE_CAP_OVERRIDES[src] ?? ENFORCE_CAP;
+        if (srcStories.length > cap) {
+          const excess = srcStories.slice(cap);
           overCapIds.push(...excess.map(s => s.id));
-          log.push(`[CapEnforce] ${src}: removing ${excess.length} over-cap stories`);
+          log.push(`[CapEnforce] ${src}: removing ${excess.length} over-cap stories (cap=${cap})`);
         }
       });
       if (overCapIds.length > 0) {
@@ -719,6 +720,7 @@ export async function GET(req: NextRequest) {
       // Cross-run filter: source cap + keyword dedup + topic_slug dedup,
       // all enforced against what's already in the digest (not just this batch).
       const SOURCE_CAP = 4;
+      const getSourceCap = (src: string) => SOURCE_CAP_OVERRIDES[src] ?? SOURCE_CAP;
       const existingTopicSlugs = new Set(existing.map(s => s.topic_slug).filter(Boolean));
       // Start source counts from what's already in the DB, then add this batch.
       const runSourceCounts = new Map(existingSourceCounts);
@@ -734,7 +736,7 @@ export async function GET(req: NextRequest) {
         const jpBelowFloor = isJP && jpBatchCount < JP_FLOOR;
 
         // 1. Per-source cap — JP below floor bypasses cap entirely
-        if (!jpBelowFloor && (runSourceCounts.get(src) ?? 0) >= SOURCE_CAP) {
+        if (!jpBelowFloor && (runSourceCounts.get(src) ?? 0) >= getSourceCap(src)) {
           const srcStories = existingSourceStories.get(src) ?? [];
           const weakest = srcStories.reduce((min, s) => s.importance_score < min.importance_score ? s : min, srcStories[0]);
           if (!weakest || story.importance_score <= weakest.importance_score) {
