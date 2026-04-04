@@ -35,6 +35,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 const RSS_FEEDS: Array<{ url: string; source: string; isIsrael: boolean; headers?: Record<string, string> }> = [
+  // Major wire services & broadcast
   { url: 'https://rsshub.app/apnews/topics/apf-topnews',          source: 'AP News',          isIsrael: false },
   { url: 'https://feeds.reuters.com/reuters/worldNews',            source: 'Reuters',           isIsrael: false },
   { url: 'https://feeds.bbci.co.uk/news/rss.xml',                 source: 'BBC',               isIsrael: false },
@@ -42,55 +43,60 @@ const RSS_FEEDS: Array<{ url: string; source: string; isIsrael: boolean; headers
   { url: 'http://rss.cnn.com/rss/edition.rss',                    source: 'CNN',               isIsrael: false },
   { url: 'https://moxie.foxnews.com/google-publisher/latest.xml', source: 'Fox News',          isIsrael: false },
   { url: 'https://feeds.nbcnews.com/nbcnews/public/news/world',   source: 'NBC News',          isIsrael: false },
+  // US politics & policy
+  { url: 'https://api.axios.com/feed/',                            source: 'Axios',             isIsrael: false },
+  { url: 'https://www.politico.com/rss/politicopicks.xml',         source: 'Politico',          isIsrael: false },
+  { url: 'https://thehill.com/feed/',                              source: 'The Hill',          isIsrael: false },
+  // Business & markets
+  { url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', source: 'CNBC',              isIsrael: false },
+  { url: 'https://feeds.marketwatch.com/marketwatch/topstories/', source: 'MarketWatch',       isIsrael: false },
+  // International & analysis
+  { url: 'https://www.theguardian.com/world/rss',                  source: 'The Guardian',      isIsrael: false },
+  { url: 'https://www.economist.com/latest/rss.xml',               source: 'The Economist',     isIsrael: false },
+  // Science & technology
+  { url: 'https://feeds.arstechnica.com/arstechnica/index',        source: 'Ars Technica',      isIsrael: false },
+  { url: 'https://www.theverge.com/rss/index.xml',                 source: 'The Verge',         isIsrael: false },
   // Israel / Middle East feeds
-  { url: 'https://www.jpost.com/rss/rssfeedsfrontpage.aspx',       source: 'Jerusalem Post',  isIsrael: true },
-  { url: 'https://www.jta.org/feed',                               source: 'JTA',             isIsrael: true },
-  { url: 'https://www.israelhayom.com/feed/',                      source: 'Israel Hayom',    isIsrael: true },
+  { url: 'https://www.jpost.com/rss/rssfeedsfrontpage.aspx',       source: 'Jerusalem Post',    isIsrael: true },
+  { url: 'https://www.jta.org/feed',                               source: 'JTA',               isIsrael: true },
+  { url: 'https://www.algemeiner.com/feed/',                       source: 'Algemeiner',        isIsrael: true },
+  { url: 'https://www.israelhayom.com/feed/',                      source: 'Israel Hayom',      isIsrael: true },
   { url: 'https://rss.nytimes.com/services/xml/rss/nyt/MiddleEast.xml', source: 'NYT Middle East', isIsrael: true },
-  { url: 'https://feeds.washingtonpost.com/rss/world',             source: 'WashPost World',  isIsrael: true },
-  { url: 'https://www.aljazeera.com/xml/rss/all.xml',              source: 'Al Jazeera',      isIsrael: true },
-  { url: 'https://www.middleeasteye.net/rss',                      source: 'Middle East Eye', isIsrael: true },
-  { url: 'https://www.972mag.com/feed/',                           source: '+972 Magazine',   isIsrael: true },
+  { url: 'https://feeds.washingtonpost.com/rss/world',             source: 'WashPost World',    isIsrael: true },
+  { url: 'https://www.aljazeera.com/xml/rss/all.xml',              source: 'Al Jazeera',        isIsrael: true },
+  { url: 'https://www.middleeasteye.net/rss',                      source: 'Middle East Eye',   isIsrael: true },
+  { url: 'https://www.972mag.com/feed/',                           source: '+972 Magazine',     isIsrael: true },
 ];
 
-const AI_BATCH_SIZE = 20;
+const AI_BATCH_SIZE = 40;
 
-const CLAUDE_SYSTEM_PROMPT = `You are a senior news editor creating a live briefing board for Orthodox Jewish families
-during Shabbos and Yom Tov. Your job is to deliver only the most important, factual news
-people can safely glance at on a wall-mounted screen.
+const CLAUDE_SYSTEM_PROMPT = `You are a senior news editor for a comprehensive live briefing board used by Orthodox Jewish families.
+The board runs 24/7 and should be genuinely informative and interesting — covering breaking news,
+important developments, business and markets, science and technology, politics, and cultural moments.
 
-CRITICAL CLUSTERING RULE: If multiple articles describe the same underlying event or situation,
-you MUST cluster them into a SINGLE story. Use the same topic_slug for all of them. For example,
-if 6 articles all discuss the US considering ground operations in Iran, those are ONE story, not six.
-Err heavily on the side of merging — it is far worse to show duplicates than to miss a minor
-distinction between articles. When in doubt, MERGE. A wall-mounted news board showing the same
-story 7 times with trivially different headlines is broken and unusable.
+CRITICAL CLUSTERING RULE: If multiple articles describe the same underlying event, cluster them into
+ONE story with the same topic_slug. Six articles about the same ceasefire negotiation = ONE story.
+Err heavily toward merging. Showing the same story twice is far worse than missing a nuance.
 
 For every batch of articles:
 
-1. Score each article 1-100 on "importance" using this exact guide:
-   - 90-100: War outbreak, major terror attack, head of state death/resignation, massive
-     natural disaster, market crash (>5% move)
-   - 70-89: Significant geopolitical event, major policy change, large-scale protest,
-     notable death, important election result, central bank decision
-   - 50-69: Notable news informed people should know — cabinet shakeup, major corporate
-     news, significant legal ruling, scientific breakthrough
-   - 30-49: Interesting but non-essential — trending stories, cultural moments,
-     entertainment, sports milestones
-   - 1-29: Minor/local/routine updates
+1. Score 1-100:
+   - 90-100: War/attack outbreak, head of state death/resignation, massive natural disaster, market crash >5%
+   - 70-89: Major geopolitical event, significant policy change, large protest, notable death, election result, central bank decision
+   - 50-69: News an informed person should know — cabinet shakeup, major corporate news, legal ruling, scientific breakthrough, significant tech development
+   - 30-49: Interesting and worth knowing — business earnings, cultural moments, sports milestones, tech product launches, economic indicators
+   - 1-29: Minor/routine/local
 
 2. Assign tier: "breaking" (80+), "major" (60-79), "notable" (40-59), "background" (<40)
 
-3. Write a concise, glanceable headline (8-14 words max) readable from across a room.
+3. Be INCLUSIVE — include stories scored 30+ if they are genuinely interesting to a well-informed reader.
+   Do NOT drop stories just because they aren't geopolitical. Business, science, tech, culture all matter.
 
-4. Write a 1-2 sentence summary that gives full context. Assume zero prior knowledge.
-   State facts only. Never use "as reported" or "sources say".
+4. Write a concise headline (8-14 words) readable from across a room.
 
-5. If multiple articles cover the same event, cluster them into ONE story and list all
-   source article_ids.
+5. Write a 1-2 sentence summary with full context. No prior knowledge assumed. Facts only.
 
-Tone: neutral, factual, respectful. No sensationalism, no editorializing, no gratuitous
-details that would violate the spirit of Shabbos.
+Tone: neutral, factual. No sensationalism, no editorializing.
 
 Respond ONLY with valid JSON. No other text, no markdown fences, no explanation.
 {
@@ -220,7 +226,7 @@ async function fetchRssArticles(): Promise<{ articles: RssArticle[]; debugLines:
         bodyPreview = body.substring(0, 200);
         if (!res.ok) throw new Error(`HTTP ${status}`);
         const feed = await parser.parseString(body);
-        const items = (feed.items ?? []).slice(0, 20).map((item: RssItem) => ({
+        const items = (feed.items ?? []).slice(0, 25).map((item: RssItem) => ({
           title:       item.title ?? '',
           description: item.contentSnippet ?? null,
           content:     item.content ?? null,
@@ -373,7 +379,7 @@ export async function GET(req: NextRequest) {
     log.push(...debugLines);
 
     const ISRAEL_SOURCES = new Set([
-      'Jerusalem Post', 'JTA', 'Israel Hayom',
+      'Jerusalem Post', 'JTA', 'Algemeiner', 'Israel Hayom',
       'NYT Middle East', 'WashPost World', 'Al Jazeera', 'Middle East Eye', '+972 Magazine',
     ]);
     const JP_FLOOR = 4; // guaranteed minimum Jerusalem Post stories on the board
@@ -393,7 +399,7 @@ export async function GET(req: NextRequest) {
     const skippedOld = allFetched.length - allIncoming.length;
     log.push(`Fetched: ${rssArticles.length} RSS + ${newsApiArticles.length} NewsAPI = ${allFetched.length} total, skipped ${skippedOld} older than 6/12h`);
 
-    const israelSourceList = ['Jerusalem Post', 'JTA', 'Israel Hayom', 'NYT Middle East', 'WashPost World', 'Al Jazeera', 'Middle East Eye', '+972 Magazine'];
+    const israelSourceList = ['Jerusalem Post', 'JTA', 'Algemeiner', 'Israel Hayom', 'NYT Middle East', 'WashPost World', 'Al Jazeera', 'Middle East Eye', '+972 Magazine'];
     const israelCounts = israelSourceList.map(s => `${s}: ${allIncoming.filter(a => a.source_name === s).length}`).join(', ');
     log.push(`[Israel Feeds] ${israelCounts}`);
 
@@ -473,9 +479,9 @@ export async function GET(req: NextRequest) {
 
     if (toProcess.length > 0) {
       // ── Guard 1: too few articles to bother ────────────────────────────────
-      if (toProcess.length < 8) {
+      if (toProcess.length < 3) {
         console.log(`[Ingest] Only ${toProcess.length} new articles, skipping Claude processing`);
-        log.push(`Skipping Claude: only ${toProcess.length} articles (< 8 threshold)`);
+        log.push(`Skipping Claude: only ${toProcess.length} articles (< 3 threshold)`);
         // fall through to pruning
       } else {
       // ── Guard 2: recent digest + few new articles ──────────────────────────
