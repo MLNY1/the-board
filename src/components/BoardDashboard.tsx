@@ -427,6 +427,9 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
                           >
                             {story.headline}
                           </span>
+                          <span style={{ fontFamily: 'var(--font-body)', color: 'var(--text-dim)', fontSize: '11px', flexShrink: 0, marginLeft: '6px' }}>
+                            {(() => { const m = Math.floor((Date.now() - new Date(story.published_at).getTime()) / 60000); return m < 60 ? `${m}m` : `${Math.floor(m/60)}h`; })()}
+                          </span>
                         </div>
                       ))}
                     </div>

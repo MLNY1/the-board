@@ -97,7 +97,7 @@ export default function StoryCard({ story }: StoryCardProps) {
           {story.sources[0] ?? ''}
         </span>
         <span style={{ flexShrink: 0 }}>
-          {formatRelativeTime(story.created_at)}
+          {formatRelativeTime(story.published_at)}
         </span>
       </div>
     </div>

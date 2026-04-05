@@ -21,6 +21,7 @@ import Parser from 'rss-parser';
 import { createServerClient } from '@/lib/supabase';
 import { deduplicateArticles, getCurrentCategory, normalizeSourceUrl } from '@/lib/news-utils';
 import { isWeekdayYomTov } from '@/lib/yomtov-utils';
+import { getShabbosWindow, getYomTovWindows } from '@/lib/shabbos-times';
 import type {
   RawArticle,
   NewsApiResponse,
@@ -36,66 +37,142 @@ import type {
 
 const RSS_FEEDS: Array<{ url: string; source: string; isIsrael: boolean; headers?: Record<string, string> }> = [
   // Major wire services & broadcast
-  { url: 'https://rsshub.app/apnews/topics/apf-topnews',          source: 'AP News',          isIsrael: false },
-  { url: 'https://feeds.reuters.com/reuters/worldNews',            source: 'Reuters',           isIsrael: false },
-  { url: 'https://feeds.bbci.co.uk/news/rss.xml',                 source: 'BBC',               isIsrael: false },
-  { url: 'https://feeds.npr.org/1001/rss.xml',                    source: 'NPR',               isIsrael: false },
-  { url: 'http://rss.cnn.com/rss/edition.rss',                    source: 'CNN',               isIsrael: false },
-  { url: 'https://moxie.foxnews.com/google-publisher/latest.xml', source: 'Fox News',          isIsrael: false },
-  { url: 'https://feeds.nbcnews.com/nbcnews/public/news/world',   source: 'NBC News',          isIsrael: false },
+  { url: 'https://rsshub.app/apnews/topics/apf-topnews',                    source: 'AP News',            isIsrael: false },
+  { url: 'https://feeds.reuters.com/reuters/worldNews',                      source: 'Reuters',             isIsrael: false },
+  { url: 'https://feeds.npr.org/1001/rss.xml',                              source: 'NPR',                 isIsrael: false },
+  { url: 'http://rss.cnn.com/rss/edition.rss',                              source: 'CNN',                 isIsrael: false },
+  { url: 'https://feeds.nbcnews.com/nbcnews/public/news/world',             source: 'NBC News',            isIsrael: false },
+  // Prestige print & wire
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml',       source: 'New York Times',      isIsrael: false },
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',          source: 'New York Times',      isIsrael: false },
+  { url: 'https://feeds.bloomberg.com/markets/news.rss',                    source: 'Bloomberg',           isIsrael: false },
+  { url: 'https://feeds.bloomberg.com/politics/news.rss',                   source: 'Bloomberg',           isIsrael: false },
+  { url: 'http://online.wsj.com/xml/rss/3_7011.xml',                        source: 'Wall Street Journal', isIsrael: false },
+  { url: 'https://www.economist.com/latest/rss.xml',                        source: 'The Economist',       isIsrael: false },
   // US politics & policy
-  { url: 'https://api.axios.com/feed/',                            source: 'Axios',             isIsrael: false },
-  { url: 'https://www.politico.com/rss/politicopicks.xml',         source: 'Politico',          isIsrael: false },
-  { url: 'https://thehill.com/feed/',                              source: 'The Hill',          isIsrael: false },
+  { url: 'https://api.axios.com/feed/',                                      source: 'Axios',               isIsrael: false },
+  { url: 'https://www.politico.com/rss/politicopicks.xml',                   source: 'Politico',            isIsrael: false },
+  { url: 'https://thehill.com/feed/',                                        source: 'The Hill',            isIsrael: false },
   // Business & markets
-  { url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', source: 'CNBC',              isIsrael: false },
-  { url: 'https://feeds.marketwatch.com/marketwatch/topstories/', source: 'MarketWatch',       isIsrael: false },
+  { url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html',           source: 'CNBC',                isIsrael: false },
+  { url: 'https://feeds.marketwatch.com/marketwatch/topstories/',            source: 'MarketWatch',         isIsrael: false },
   // International & analysis
-  { url: 'https://www.theguardian.com/world/rss',                  source: 'The Guardian',      isIsrael: false },
-  { url: 'https://www.economist.com/latest/rss.xml',               source: 'The Economist',     isIsrael: false },
+  { url: 'https://www.theguardian.com/world/rss',                            source: 'The Guardian',        isIsrael: false },
+  { url: 'https://feeds.washingtonpost.com/rss/world',                       source: 'Washington Post',     isIsrael: false },
+  { url: 'https://rss.dw.com/xml/rss-en-all',                               source: 'Deutsche Welle',      isIsrael: false },
+  { url: 'https://www.france24.com/en/rss',                                  source: 'France 24',           isIsrael: false },
+  { url: 'https://feeds.bbci.co.uk/news/rss.xml',                           source: 'BBC',                 isIsrael: false },
   // Science & technology
-  { url: 'https://feeds.arstechnica.com/arstechnica/index',        source: 'Ars Technica',      isIsrael: false },
-  { url: 'https://www.theverge.com/rss/index.xml',                 source: 'The Verge',         isIsrael: false },
-  // Israel / Middle East feeds
-  { url: 'https://www.jpost.com/rss/rssfeedsfrontpage.aspx',       source: 'Jerusalem Post',    isIsrael: true },
-  { url: 'https://www.jta.org/feed',                               source: 'JTA',               isIsrael: true },
-  { url: 'https://www.algemeiner.com/feed/',                       source: 'Algemeiner',        isIsrael: true },
-  { url: 'https://www.israelhayom.com/feed/',                      source: 'Israel Hayom',      isIsrael: true },
-  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/MiddleEast.xml', source: 'NYT Middle East', isIsrael: true },
-  { url: 'https://feeds.washingtonpost.com/rss/world',             source: 'WashPost World',    isIsrael: true },
-  { url: 'https://www.aljazeera.com/xml/rss/all.xml',              source: 'Al Jazeera',        isIsrael: true },
-  { url: 'https://www.middleeasteye.net/rss',                      source: 'Middle East Eye',   isIsrael: true },
-  { url: 'https://www.972mag.com/feed/',                           source: '+972 Magazine',     isIsrael: true },
+  { url: 'https://feeds.arstechnica.com/arstechnica/index',                  source: 'Ars Technica',        isIsrael: false },
+  { url: 'https://www.theverge.com/rss/index.xml',                           source: 'The Verge',           isIsrael: false },
+  // Israel feeds
+  { url: 'https://www.jpost.com/rss/rssfeedsfrontpage.aspx',                 source: 'Jerusalem Post',      isIsrael: true },
+  { url: 'https://www.jta.org/feed',                                         source: 'JTA',                 isIsrael: true },
+  { url: 'https://www.algemeiner.com/feed/',                                  source: 'Algemeiner',          isIsrael: true },
+  { url: 'https://www.israelhayom.com/feed/',                                 source: 'Israel Hayom',        isIsrael: true },
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/MiddleEast.xml',      source: 'NYT Middle East',     isIsrael: true },
+  // Al Jazeera, Middle East Eye, +972 Magazine removed — editorial slant distorts global balance
 ];
 
 const AI_BATCH_SIZE = 40;
 
-const CLAUDE_SYSTEM_PROMPT = `You are a senior news editor for a comprehensive live briefing board used by Orthodox Jewish families.
-The board runs 24/7 and should be genuinely informative and interesting — covering breaking news,
-important developments, business and markets, science and technology, politics, and cultural moments.
+// ---------------------------------------------------------------------------
+// Source prestige weights for heuristic pre-filter
+// ---------------------------------------------------------------------------
 
-CRITICAL CLUSTERING RULE: If multiple articles describe the same underlying event, cluster them into
-ONE story with the same topic_slug. Six articles about the same ceasefire negotiation = ONE story.
-Err heavily toward merging. Showing the same story twice is far worse than missing a nuance.
+const SOURCE_PRESTIGE: Record<string, number> = {
+  // Tier 1 — high prestige (+35 pts)
+  'Reuters':              35,
+  'AP News':              35,
+  'New York Times':       35,
+  'NYT Middle East':      30,
+  'Bloomberg':            35,
+  'Wall Street Journal':  35,
+  'The Economist':        30,
+  // Tier 2 — medium prestige (+15 pts)
+  'NPR':                  15,
+  'Axios':                15,
+  'Politico':             15,
+  'CNBC':                 15,
+  'Washington Post':      15,
+  'Deutsche Welle':       15,
+  'France 24':            15,
+  'MarketWatch':          10,
+  'NBC News':              5,
+  // Tier 3 — lower prestige (0 pts)
+  'BBC':                   0,
+  'The Guardian':          0,
+  'CNN':                   0,
+  'Fox News':            -10,
+  'The Hill':              0,
+  // Israel/ME
+  'Jerusalem Post':       10,
+  'JTA':                  10,
+  'Algemeiner':            5,
+  'Israel Hayom':          5,
+};
 
-For every batch of articles:
+const IMPORTANCE_KEYWORDS = [
+  // World events & politics
+  'election', 'elected', 'vote', 'president', 'prime minister', 'chancellor',
+  'war', 'attack', 'missile', 'strike', 'nuclear', 'troops', 'military',
+  'ceasefire', 'peace', 'treaty', 'summit', 'diplomacy', 'sanction',
+  'coup', 'protest', 'assassination', 'referendum',
+  // Economy & markets
+  'economy', 'gdp', 'inflation', 'recession', 'interest rate', 'federal reserve',
+  'market', 'tariff', 'trade war', 'collapse', 'crisis', 'earnings', 'ipo',
+  // Science, tech, climate
+  'breakthrough', 'discovery', 'artificial intelligence', 'climate',
+  'vaccine', 'earthquake', 'hurricane', 'wildfire', 'space',
+  // Security & law
+  'terrorism', 'cybersecurity', 'hack', 'supreme court', 'ruling', 'legislation',
+  'congress', 'senate', 'parliament',
+];
 
-1. Score 1-100:
-   - 90-100: War/attack outbreak, head of state death/resignation, massive natural disaster, market crash >5%
-   - 70-89: Major geopolitical event, significant policy change, large protest, notable death, election result, central bank decision
-   - 50-69: News an informed person should know — cabinet shakeup, major corporate news, legal ruling, scientific breakthrough, significant tech development
-   - 30-49: Interesting and worth knowing — business earnings, cultural moments, sports milestones, tech product launches, economic indicators
-   - 1-29: Minor/routine/local
+function heuristicScore(
+  article: { title: string; description?: string | null; source_name?: string | null; published_at?: string | null },
+  now: number,
+): number {
+  let score = 50; // base
 
-2. Assign tier: "breaking" (80+), "major" (60-79), "notable" (40-59), "background" (<40)
+  // Source prestige
+  score += SOURCE_PRESTIGE[article.source_name ?? ''] ?? 0;
 
-3. Be INCLUSIVE — include stories scored 30+ if they are genuinely interesting to a well-informed reader.
-   Do NOT drop stories just because they aren't geopolitical. Business, science, tech, culture all matter.
+  // Recency: 0–25 pts (full at <1 h, slides to 0 at ~6 h)
+  if (article.published_at) {
+    const ageH = (now - new Date(article.published_at).getTime()) / 3_600_000;
+    score += Math.max(0, Math.round(25 - ageH * 4.2));
+  }
 
-4. Write a concise headline (8-14 words) readable from across a room.
+  // Keyword importance (up to 25 pts)
+  const text = `${article.title} ${article.description ?? ''}`.toLowerCase();
+  const kwMatches = IMPORTANCE_KEYWORDS.filter(kw => text.includes(kw)).length;
+  score += Math.min(25, kwMatches * 5);
 
-5. Write a 1-2 sentence summary with full context. No prior knowledge assumed. Facts only.
+  return score;
+}
 
+const CLAUDE_SYSTEM_PROMPT = `You are curating global news stories for a high-quality always-on news dashboard. Your goal: give a well-informed reader 12-20 distinct stories that together paint a clear picture of what is happening in the world today — politics, economy, security, science/tech, international developments.
+
+CRITICAL CLUSTERING RULE: If multiple articles describe the same underlying event, cluster them into ONE story with the same topic_slug. Six articles about the same ceasefire negotiation = ONE story. Err heavily toward merging. Showing the same story twice is far worse than missing a nuance.
+
+For each article or cluster:
+- Write a neutral, concise, fact-focused headline (8-14 words) readable from across a room.
+- Write a 1-2 sentence summary with full context. No prior knowledge assumed. Facts only.
+- Assign tier: breaking / major / notable / background
+- Assign importance_score 1-100.
+- Assign a short topic_slug (e.g. "us-election-2028", "middle-east-security", "global-markets").
+
+Score rubric:
+- 85-100 (breaking): War outbreak, head of state death/resignation, massive disaster, market crash >5%
+- 65-84 (major): Major geopolitical event, significant policy shift, election result, central bank decision, large protest, notable death
+- 45-64 (notable): Cabinet shakeup, important corporate news, legal ruling, scientific breakthrough, significant tech development
+- 30-44 (background): Interesting to a well-informed reader — earnings, economic indicators, tech launches, cultural moments, sports milestones
+
+Be INCLUSIVE at the bottom end. A story worth knowing about should be scored 30+.
+Only score below 30 for things that are truly minor, local, or purely routine.
+Do not drop stories just because they are not geopolitical — business, science, tech, and culture all belong on the board.
+Do not favor any regional or editorial slant. Cover the world, not one region.
 Tone: neutral, factual. No sensationalism, no editorializing.
 
 Respond ONLY with valid JSON. No other text, no markdown fences, no explanation.
@@ -329,7 +406,7 @@ async function processWithClaude(
 
   const message = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 4096,
+    max_tokens: 8000,
     system: CLAUDE_SYSTEM_PROMPT,
     messages: [
       {
@@ -340,14 +417,22 @@ async function processWithClaude(
   });
 
   const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
+  const stopReason = message.stop_reason;
 
   try {
     // Strip any accidental markdown fences before parsing
     const cleaned = responseText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+    if (!cleaned) {
+      console.error('Claude returned empty response. stop_reason:', stopReason);
+      return [];
+    }
     const parsed: ClaudeBatchResponse = JSON.parse(cleaned);
+    if (stopReason === 'max_tokens') {
+      console.warn('Claude hit max_tokens — response may be truncated, partial stories returned');
+    }
     return parsed.stories ?? [];
   } catch (err) {
-    console.error('Failed to parse Claude response:', err, '\nRaw:', responseText.slice(0, 500));
+    console.error('Failed to parse Claude response. stop_reason:', stopReason, '\nError:', err, '\nRaw:', responseText.slice(0, 500));
     return [];
   }
 }
@@ -365,6 +450,40 @@ export async function GET(req: NextRequest) {
   const runStart = Date.now();
   const log: string[] = [];
 
+  // Manual override: ?deep=true forces the extended age window.
+  // Automatic: if we are within 3 hours of candle lighting (Shabbat or Yom Tov),
+  // activate the deep refresh so the last Shabbos run has a rich article pool.
+  const manualDeep = new URL(req.url).searchParams.get('deep') === 'true';
+  let isDeepRefresh = manualDeep;
+  if (!isDeepRefresh) {
+    try {
+      const defaultZip = process.env.DEFAULT_ZIP ?? '11598';
+      const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+      const now = Date.now();
+
+      // Check upcoming Shabbat candle lighting
+      const shabbosWindow = await getShabbosWindow(defaultZip).catch(() => null);
+      if (shabbosWindow && shabbosWindow.start.getTime() > now) {
+        const msTilCandles = shabbosWindow.start.getTime() - now;
+        if (msTilCandles <= THREE_HOURS_MS) isDeepRefresh = true;
+      }
+
+      // Check upcoming Yom Tov start
+      if (!isDeepRefresh) {
+        const ytWindows = await getYomTovWindows(defaultZip).catch(() => []);
+        for (const yt of ytWindows) {
+          if (yt.start.getTime() > now) {
+            const msTilYT = yt.start.getTime() - now;
+            if (msTilYT <= THREE_HOURS_MS) { isDeepRefresh = true; break; }
+          }
+        }
+      }
+    } catch {
+      // Hebcal unavailable — skip auto deep refresh, normal window applies
+    }
+  }
+  if (isDeepRefresh) log.push('[DeepRefresh] Extended age window active (15h general) — within 3h of candle lighting');
+
   try {
     // -----------------------------------------------------------------------
     // Step 1: Fetch articles from all sources
@@ -379,18 +498,19 @@ export async function GET(req: NextRequest) {
     log.push(...debugLines);
 
     const ISRAEL_SOURCES = new Set([
-      'Jerusalem Post', 'JTA', 'Algemeiner', 'Israel Hayom',
-      'NYT Middle East', 'WashPost World', 'Al Jazeera', 'Middle East Eye', '+972 Magazine',
+      'Jerusalem Post', 'JTA', 'Algemeiner', 'Israel Hayom', 'NYT Middle East',
     ]);
     const JP_FLOOR = 4; // guaranteed minimum Jerusalem Post stories on the board
-    const sixHoursAgo        = Date.now() -  6 * 60 * 60 * 1000;
+    // Deep refresh extends the general window from 6h to 15h (pre-Shabbos sweep)
+    const generalWindowH     = isDeepRefresh ? 15 : 6;
+    const sixHoursAgo        = Date.now() -  generalWindowH * 60 * 60 * 1000;
     const twelveHoursAgo     = Date.now() - 12 * 60 * 60 * 1000;
     const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
     const allFetched = [...rssArticles, ...newsApiArticles];
     const allIncoming = allFetched.filter(a => {
       if (!a.published_at) return true;
       const published = new Date(a.published_at).getTime();
-      // JP gets a 24h window; other Israel sources 12h; general 6h
+      // JP gets a 24h window; other Israel sources 12h; general 6h (15h deep)
       const cutoff = a.source_name === 'Jerusalem Post' ? twentyFourHoursAgo
                    : ISRAEL_SOURCES.has(a.source_name ?? '') ? twelveHoursAgo
                    : sixHoursAgo;
@@ -399,7 +519,7 @@ export async function GET(req: NextRequest) {
     const skippedOld = allFetched.length - allIncoming.length;
     log.push(`Fetched: ${rssArticles.length} RSS + ${newsApiArticles.length} NewsAPI = ${allFetched.length} total, skipped ${skippedOld} older than 6/12h`);
 
-    const israelSourceList = ['Jerusalem Post', 'JTA', 'Algemeiner', 'Israel Hayom', 'NYT Middle East', 'WashPost World', 'Al Jazeera', 'Middle East Eye', '+972 Magazine'];
+    const israelSourceList = ['Jerusalem Post', 'JTA', 'Algemeiner', 'Israel Hayom', 'NYT Middle East'];
     const israelCounts = israelSourceList.map(s => `${s}: ${allIncoming.filter(a => a.source_name === s).length}`).join(', ');
     log.push(`[Israel Feeds] ${israelCounts}`);
 
@@ -514,7 +634,7 @@ export async function GET(req: NextRequest) {
       // keeping the highest-scored ones. Fixes any over-cap state from before this
       // logic existed.
       const ENFORCE_CAP = 4;
-      const SOURCE_CAP_OVERRIDES: Record<string, number> = { 'Middle East Eye': 2 };
+      const SOURCE_CAP_OVERRIDES: Record<string, number> = { 'BBC': 2 };
       const { data: allLive } = await supabase
         .from('digest_stories')
         .select('id, source_names, importance_score')
@@ -626,9 +746,31 @@ export async function GET(req: NextRequest) {
       if (toSendToClaude.length === 0) {
         log.push('All articles pre-filtered — skipping Claude');
       } else {
-      log.push(`Sending ${toSendToClaude.length} articles to Claude`);
-      const stories = await processWithClaude(toSendToClaude);
+      // ── Heuristic scoring: pick top 30 before sending to Claude ─────────────
+      // Scores articles by source prestige, recency, and importance keywords so
+      // Claude receives the highest-quality slice rather than a random 40.
+      const hNow = Date.now();
+      const hScored = toSendToClaude
+        .map(a => ({ article: a, hs: heuristicScore(a, hNow) }))
+        .sort((x, y) => y.hs - x.hs);
+      const TARGET_BATCH = 30;
+      const batchForClaude = hScored.slice(0, TARGET_BATCH).map(x => x.article);
+      const hDropped = hScored.slice(TARGET_BATCH).map(x => x.article);
+      if (hDropped.length > 0) {
+        log.push(`[Heuristic] Trimmed ${hDropped.length} lower-priority articles (kept ${batchForClaude.length})`);
+        await supabase.from('raw_articles').update({ processed: true }).in('id', hDropped.map(a => a.id));
+      }
+      log.push(`Sending ${batchForClaude.length} articles to Claude`);
+      const stories = await processWithClaude(batchForClaude);
       log.push(`Claude returned ${stories.length} stories`);
+
+      // ── Hard minimum: drop genuinely trivial stories (below 30) ─────────────
+      const minScore = 30;
+      const belowMin = stories.filter(s => s.importance_score < minScore);
+      if (belowMin.length > 0) {
+        log.push(`[ScoreFilter] Dropped ${belowMin.length} stories below score ${minScore}`);
+      }
+      const aboveMin = stories.filter(s => s.importance_score >= minScore);
 
       // ── Israel/ME importance boost (+15, capped at 100) ──────────────────
       const israelKeywords = [
@@ -639,10 +781,10 @@ export async function GET(req: NextRequest) {
         'hostage', 'hostages', 'sinwar', 'gallant', 'smotrich', 'ben gvir',
       ];
       let boostedCount = 0;
-      for (const story of stories) {
+      for (const story of aboveMin) {
         const text = `${story.headline} ${story.summary}`.toLowerCase();
         if (israelKeywords.some(kw => text.includes(kw))) {
-          story.importance_score = Math.min(100, story.importance_score + 20);
+          story.importance_score = Math.min(100, story.importance_score + 15);
           if (story.importance_score >= 80)      story.tier = 'breaking';
           else if (story.importance_score >= 60) story.tier = 'major';
           else if (story.importance_score >= 40) story.tier = 'notable';
@@ -651,7 +793,7 @@ export async function GET(req: NextRequest) {
         }
       }
       if (boostedCount > 0) log.push(`Israel boost applied to ${boostedCount} stories`);
-      log.push(`[Scoring] Top 5: ${JSON.stringify(stories.slice(0, 5).map(s => ({ headline: s.headline.slice(0, 60), score: s.importance_score, tier: s.tier })))}`);
+      log.push(`[Scoring] Top 5: ${JSON.stringify(aboveMin.slice(0, 5).map(s => ({ headline: s.headline.slice(0, 60), score: s.importance_score, tier: s.tier })))}`);
 
       // ── Market news boost (weekday Yom Tov only) ─────────────────────────
       const defaultZip = process.env.DEFAULT_ZIP ?? '11598';
@@ -667,7 +809,7 @@ export async function GET(req: NextRequest) {
           'recession', 'stimulus', 'tariff', 'trade war', 'sanctions',
         ];
         let marketBoosted = 0;
-        for (const story of stories) {
+        for (const story of aboveMin) {
           const text = `${story.headline} ${story.summary}`.toLowerCase();
           if (marketKeywords.some(kw => text.includes(kw))) {
             story.importance_score = Math.min(100, story.importance_score + 10);
@@ -684,18 +826,22 @@ export async function GET(req: NextRequest) {
       }
 
       // ── Post-processing dedup ─────────────────────────────────────────────
-      // Pass 1: group by topic_slug — keep only the highest-scored per topic.
-      const topicMap = new Map<string, ClaudeStory>();
-      for (const story of stories) {
-        const key      = story.topic_slug || story.headline.slice(0, 40).toLowerCase();
-        const existing = topicMap.get(key);
-        if (!existing || story.importance_score > existing.importance_score) {
-          topicMap.set(key, story);
+      // Pass 1: topic_slug soft cap — keep top 3 per slug (allows distinct sub-stories
+      // while preventing one topic from flooding the board).
+      const TOPIC_BATCH_CAP = 3;
+      const topicCounts = new Map<string, number>();
+      const topicCapped: ClaudeStory[] = [];
+      for (const story of [...aboveMin].sort((a, b) => b.importance_score - a.importance_score)) {
+        const key   = story.topic_slug || `_${story.headline.slice(0, 40).toLowerCase()}`;
+        const count = topicCounts.get(key) ?? 0;
+        if (count < TOPIC_BATCH_CAP) {
+          topicCapped.push(story);
+          topicCounts.set(key, count + 1);
         }
       }
 
       // Pass 2: pairwise headline Jaccard overlap check (≥50% = duplicate).
-      const pass2Input   = Array.from(topicMap.values());
+      const pass2Input   = topicCapped;
       const jaccardKept: ClaudeStory[] = [];
       for (const story of pass2Input) {
         let isDup  = false;
@@ -731,7 +877,7 @@ export async function GET(req: NextRequest) {
 
       // Pass 4: entity-based dedup — same primary source + 2+ shared entities = duplicate.
       // finalStories is already sorted desc by score from Pass 3; keep the first (highest).
-      const articleSourceMap = new Map(toSendToClaude.map(a => [a.id, a.source_name ?? '']));
+      const articleSourceMap = new Map(batchForClaude.map(a => [a.id, a.source_name ?? '']));
       const primarySource = (s: ClaudeStory) => articleSourceMap.get(s.article_ids[0]) ?? '';
       const entityKept: ClaudeStory[] = [];
       let entityDropped = 0;
@@ -754,7 +900,12 @@ export async function GET(req: NextRequest) {
       // all enforced against what's already in the digest (not just this batch).
       const SOURCE_CAP = 4;
       const getSourceCap = (src: string) => SOURCE_CAP_OVERRIDES[src] ?? SOURCE_CAP;
-      const existingTopicSlugs = new Set(existing.map(s => s.topic_slug).filter(Boolean));
+      // Track existing topic slug counts for per-topic diversity cap
+      const TOPIC_CROSS_CAP = 4; // max stories with the same slug across all live stories
+      const existingTopicSlugCounts = new Map<string, number>();
+      for (const s of existing) {
+        if (s.topic_slug) existingTopicSlugCounts.set(s.topic_slug, (existingTopicSlugCounts.get(s.topic_slug) ?? 0) + 1);
+      }
       // Start source counts from what's already in the DB, then add this batch.
       const runSourceCounts = new Map(existingSourceCounts);
       // Track stories to displace (replaced by a higher-scored new story).
@@ -781,14 +932,18 @@ export async function GET(req: NextRequest) {
           log.push(`[SourceCap] Displaced (${src}) score ${weakest.importance_score} for new score ${story.importance_score}`);
         }
 
-        // 2. Headline Jaccard similarity against all existing headlines (all sources)
-        if (existingHeadlines.some(h => jaccardSimilarity(story.headline, h) >= 0.4)) {
+        // 2. Headline Jaccard similarity against all existing headlines (stricter: ≥0.45)
+        if (existingHeadlines.some(h => jaccardSimilarity(story.headline, h) >= 0.45)) {
           log.push(`[Dedup] Jaccard drop: "${story.headline.slice(0, 60)}"`);
           return false;
         }
 
-        // 3. topic_slug already in digest
-        if (story.topic_slug && existingTopicSlugs.has(story.topic_slug)) return false;
+        // 3. topic_slug diversity cap — allow up to TOPIC_CROSS_CAP per slug
+        if (story.topic_slug) {
+          const slugCount = existingTopicSlugCounts.get(story.topic_slug) ?? 0;
+          if (slugCount >= TOPIC_CROSS_CAP) return false;
+          existingTopicSlugCounts.set(story.topic_slug, slugCount + 1);
+        }
 
         // 4. Stemmed keyword overlap (3+ of 8 meaningful words)
         const newKW = stemmedKeyWords(story.headline);
@@ -803,11 +958,11 @@ export async function GET(req: NextRequest) {
         return true;
       });
 
-      const removedCount = stories.length - crossRunFiltered.length;
-      if (removedCount > 0) log.push(`[Dedup] ${removedCount} removed (${stories.length} raw → ${crossRunFiltered.length} final)`);
+      const removedCount = aboveMin.length - crossRunFiltered.length;
+      if (removedCount > 0) log.push(`[Dedup] ${removedCount} removed (${aboveMin.length} scored → ${crossRunFiltered.length} final)`);
 
       // Build a lookup: article_id → source info
-      const articleLookup = new Map(toSendToClaude.map((a) => [a.id, a]));
+      const articleLookup = new Map(batchForClaude.map((a) => [a.id, a]));
 
       if (crossRunFiltered.length > 0) {
         const digestRows = crossRunFiltered.map((story) => {
@@ -864,7 +1019,7 @@ export async function GET(req: NextRequest) {
       }
 
       // Mark all Claude-processed articles
-      const processedIds = toSendToClaude.map((a) => a.id);
+      const processedIds = batchForClaude.map((a) => a.id);
       await supabase
         .from('raw_articles')
         .update({ processed: true })

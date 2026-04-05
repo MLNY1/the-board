@@ -141,7 +141,7 @@ export default function HeroStory({ story, isNew = false }: HeroStoryProps) {
         >
           {story.sources.slice(0, 3).join(' · ')}
           {story.sources.length > 0 && ' · '}
-          {formatRelativeTime(story.created_at)}
+          {formatRelativeTime(story.published_at)}
         </div>
       </div>
     </div>
