@@ -113,7 +113,8 @@ export async function GET(req: NextRequest) {
     };
     for (const story of (stories ?? []) as DigestStory[]) {
       if (!seenIds.has(story.id)) continue;
-      if (!story.topic_slug || seenSlugs.get(story.topic_slug)?.id !== story.id) continue;
+      // Skip slug losers (a higher-scored story already covers this slug)
+      if (story.topic_slug && seenSlugs.get(story.topic_slug)?.id !== story.id) continue;
       if (headlineSeen.some(k => headlineJaccard(story.headline, k.headline) >= 0.4)) continue;
       headlineSeen.push(story);
     }
