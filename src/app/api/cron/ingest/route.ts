@@ -616,9 +616,9 @@ export async function GET(req: NextRequest) {
         ? Date.now() - new Date(latestDigest.created_at).getTime()
         : Infinity;
 
-      if (digestAgeMs < 60 * 60 * 1000 && toProcess.length < 8) {
+      if (digestAgeMs < 90 * 60 * 1000 && toProcess.length < 10) {
         console.log(`[Ingest] Recent digest exists and only ${toProcess.length} new articles, skipping`);
-        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old + only ${toProcess.length} articles (< 8 threshold)`);
+        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old + only ${toProcess.length} articles (< 10 threshold)`);
         // fall through to pruning
       } else {
       // ── Clean up stale digest stories before cap check ────────────────────
@@ -753,14 +753,24 @@ export async function GET(req: NextRequest) {
       const hScored = toSendToClaude
         .map(a => ({ article: a, hs: heuristicScore(a, hNow) }))
         .sort((x, y) => y.hs - x.hs);
-      const TARGET_BATCH = 30;
+      const TARGET_BATCH = 20;
       const batchForClaude = hScored.slice(0, TARGET_BATCH).map(x => x.article);
       const hDropped = hScored.slice(TARGET_BATCH).map(x => x.article);
       if (hDropped.length > 0) {
         log.push(`[Heuristic] Trimmed ${hDropped.length} lower-priority articles (kept ${batchForClaude.length})`);
         await supabase.from('raw_articles').update({ processed: true }).in('id', hDropped.map(a => a.id));
       }
-      log.push(`Sending ${batchForClaude.length} articles to Claude`);
+
+      // ── Quality gate: skip Claude if top batch has nothing important ──────────
+      // If the highest heuristic score in the batch is below 80, there are no
+      // prestige-source or keyword-rich articles — nothing meaningful enough to
+      // justify a Claude call.
+      const topHScore = hScored[0]?.hs ?? 0;
+      if (topHScore < 65) {
+        log.push(`Skipping Claude: top heuristic score ${topHScore} < 65, no worthwhile articles in batch`);
+        await supabase.from('raw_articles').update({ processed: true }).in('id', batchForClaude.map(a => a.id));
+      } else {
+      log.push(`Sending ${batchForClaude.length} articles to Claude (top heuristic score: ${topHScore})`);
       const stories = await processWithClaude(batchForClaude);
       log.push(`Claude returned ${stories.length} stories`);
 
@@ -1024,6 +1034,7 @@ export async function GET(req: NextRequest) {
         .from('raw_articles')
         .update({ processed: true })
         .in('id', processedIds);
+      } // end quality gate (topHScore >= 80)
       } // end toSendToClaude.length > 0
       } // end guard 3 (daily cap)
       } // end guard 2 (recent digest)
