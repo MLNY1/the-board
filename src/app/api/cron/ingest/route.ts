@@ -399,7 +399,7 @@ async function processWithClaude(
   const articlesSummary = articles.map((a) => ({
     id: a.id,
     title: a.title,
-    description: a.description ?? '',
+    description: (a.description ?? '').slice(0, 150),
     source: a.source_name ?? 'Unknown',
     published_at: a.published_at ?? '',
   }));
@@ -616,9 +616,9 @@ export async function GET(req: NextRequest) {
         ? Date.now() - new Date(latestDigest.created_at).getTime()
         : Infinity;
 
-      if (digestAgeMs < 90 * 60 * 1000 && toProcess.length < 10) {
-        console.log(`[Ingest] Recent digest exists and only ${toProcess.length} new articles, skipping`);
-        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old + only ${toProcess.length} articles (< 10 threshold)`);
+      if (digestAgeMs < 50 * 60 * 1000 && toProcess.length < 30) {
+        console.log(`[Ingest] Recent digest exists (${Math.round(digestAgeMs / 60000)}min ago), skipping`);
+        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old (< 50min) and no article surge (${toProcess.length} < 30)`);
         // fall through to pruning
       } else {
       // ── Clean up stale digest stories before cap check ────────────────────
