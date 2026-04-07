@@ -21,7 +21,7 @@ import Parser from 'rss-parser';
 import { createServerClient } from '@/lib/supabase';
 import { deduplicateArticles, getCurrentCategory, normalizeSourceUrl } from '@/lib/news-utils';
 import { isWeekdayYomTov } from '@/lib/yomtov-utils';
-import { getShabbosWindow, getYomTovWindows } from '@/lib/shabbos-times';
+import { getShabbosWindow, getYomTovWindows, getActiveWindow } from '@/lib/shabbos-times';
 import type {
   RawArticle,
   NewsApiResponse,
@@ -616,9 +616,18 @@ export async function GET(req: NextRequest) {
         ? Date.now() - new Date(latestDigest.created_at).getTime()
         : Infinity;
 
-      if (digestAgeMs < 50 * 60 * 1000 && toProcess.length < 30) {
-        console.log(`[Ingest] Recent digest exists (${Math.round(digestAgeMs / 60000)}min ago), skipping`);
-        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old (< 50min) and no article surge (${toProcess.length} < 30)`);
+      // During Shabbos/Yom Tov keep the board fresh: allow Claude every 50 min.
+      // On regular weekdays there's less urgency: only call every 4 hours.
+      // Either way, a surge of 30+ new articles (breaking news) overrides the gate.
+      const defaultZipG2 = process.env.DEFAULT_ZIP ?? '11598';
+      const activeWindowG2 = await getActiveWindow(defaultZipG2).catch(() => null);
+      const isShabbosOrYT = activeWindowG2 !== null;
+      const minIntervalMs = isShabbosOrYT ? 50 * 60 * 1000 : 4 * 60 * 60 * 1000;
+      log.push(`[Guard2] ${isShabbosOrYT ? 'Shabbos/YT mode (50min gate)' : 'Weekday mode (4h gate)'}, digest age ${Math.round(digestAgeMs / 60000)}min`);
+
+      if (digestAgeMs < minIntervalMs && toProcess.length < 30) {
+        console.log(`[Ingest] Skipping Claude — digest ${Math.round(digestAgeMs / 60000)}min old, interval ${isShabbosOrYT ? '50min' : '4h'}`);
+        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old (< ${isShabbosOrYT ? '50min' : '4h'}) and no article surge (${toProcess.length} < 30)`);
         // fall through to pruning
       } else {
       // ── Clean up stale digest stories before cap check ────────────────────
