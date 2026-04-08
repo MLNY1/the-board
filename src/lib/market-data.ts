@@ -48,8 +48,10 @@ export async function fetchMarketData(): Promise<MarketData> {
   }
 
   try {
-    const symbolString = SYMBOLS.map(s => s.symbol).join(',');
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbolString)}`;
+    // Encode each symbol individually (handles BTC-USD, DX-Y.NYB etc.)
+    // but keep commas raw — Yahoo Finance rejects %2C between symbols.
+    const symbolString = SYMBOLS.map(s => encodeURIComponent(s.symbol)).join(',');
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbolString}`;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10_000);

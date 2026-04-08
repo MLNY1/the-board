@@ -13,7 +13,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { getActiveWindow, getShabbosWindow, type GeoParams } from '@/lib/shabbos-times';
-import { isWeekdayYomTov } from '@/lib/yomtov-utils';
 import { fetchMarketData } from '@/lib/market-data';
 import type { DigestResponse, DigestStory, MarketData } from '@/types';
 
@@ -24,7 +23,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const zip         = searchParams.get('zip')    ?? DEFAULT_ZIP;
   const sinceParam  = searchParams.get('since');
-  const forceMarket = searchParams.get('market') === 'true';
+  // ?market=true kept for backwards compat but market is now always-on
+  void searchParams.get('market');
 
   const latParam    = searchParams.get('lat');
   const lngParam    = searchParams.get('lng');
@@ -43,16 +43,14 @@ export async function GET(req: NextRequest) {
     const now = new Date();
     const cutoff12h = new Date(now.getTime() - 6 * 60 * 60 * 1000);
 
-    // Fetch Shabbos/YT state and market mode concurrently
-    const [activeWindow, shabbosWindow, weekdayYomTov] = await Promise.allSettled([
+    // Fetch Shabbos/YT state concurrently
+    const [activeWindow, shabbosWindow] = await Promise.allSettled([
       getActiveWindow(zip, geo),
       getShabbosWindow(zip, geo),
-      isWeekdayYomTov(zip, geo),
     ]);
 
-    const active         = activeWindow.status === 'fulfilled'   ? activeWindow.value   : null;
-    const shabbos        = shabbosWindow.status === 'fulfilled'  ? shabbosWindow.value  : null;
-    const marketActive   = forceMarket || (weekdayYomTov.status === 'fulfilled' && weekdayYomTov.value);
+    const active  = activeWindow.status  === 'fulfilled' ? activeWindow.value  : null;
+    const shabbos = shabbosWindow.status === 'fulfilled' ? shabbosWindow.value : null;
 
     // If Shabbos is active, show stories since Shabbos started (not just 12h).
     // Use whichever cutoff gives MORE stories.
@@ -131,10 +129,9 @@ export async function GET(req: NextRequest) {
     const deduped = headlineSeen.sort((a, b) => effectiveScore(b) - effectiveScore(a));
 
     // -----------------------------------------------------------------------
-    // Market data (only when weekday yom tov or ?market=true)
+    // Market data — always fetched (Yahoo Finance, free, no API key)
     // -----------------------------------------------------------------------
-    const marketDisabled: MarketData = { enabled: false, prices: [], last_updated: '' };
-    const market: MarketData = marketActive ? await fetchMarketData() : marketDisabled;
+    const market: MarketData = await fetchMarketData();
 
     // -----------------------------------------------------------------------
     // Build response
