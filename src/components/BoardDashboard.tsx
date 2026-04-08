@@ -333,7 +333,7 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
       />
 
       {/* Market ticker — only during weekday Yom Tov (or ?market=true) */}
-      {marketData.enabled && <MarketTicker prices={marketData.prices} />}
+      {marketData.enabled && <MarketTicker prices={marketData.prices} lastUpdated={marketData.last_updated} />}
 
       {/* Content area — fades on transitions */}
       <div
