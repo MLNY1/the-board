@@ -1,44 +1,42 @@
 /**
- * Market data fetching via Twelve Data API.
+ * Market data via Yahoo Finance quote API (no API key required).
  *
- * Free tier: 800 credits/day, 8 per API call (7 symbols in one batch).
- * In-memory cache with 15-min TTL keeps usage ≈ 96 calls/day well within limits,
- * even when the digest polls every 60s.
+ * Symbols use Yahoo Finance format:
+ *   ES=F  — S&P 500 E-mini futures
+ *   NQ=F  — Nasdaq 100 E-mini futures
+ *   YM=F  — Dow Jones E-mini futures
+ *   ZN=F  — 10-Year Treasury Note futures
+ *   CL=F  — WTI Crude Oil futures
+ *   GC=F  — Gold futures
+ *   BTC-USD — Bitcoin
+ *   DX-Y.NYB — US Dollar Index
  *
- * Symbols used (all ETF/crypto proxies accessible on free tier):
- *   SPY   — S&P 500
- *   QQQ   — Nasdaq 100
- *   TLT   — 20Y Treasury (invert: price ↓ = yields ↑)
- *   UUP   — Dollar index proxy
- *   USO   — Crude oil proxy
- *   GLD   — Gold proxy
- *   BTC/USD — Bitcoin
+ * Each price carries its own timestamp (regularMarketTime) from Yahoo,
+ * so the display can show exactly when each quote is from.
+ *
+ * 15-minute in-memory cache prevents hammering the API on every digest poll.
  */
 
 import type { MarketPrice, MarketData } from '@/types';
 
-const SYMBOLS: Array<{ symbol: string; label: string; invert: boolean; exchange?: string; isFuture?: boolean }> = [
-  // Spot / ETF
-  { symbol: 'SPY',     label: 'S&P 500',    invert: false },
-  { symbol: 'QQQ',     label: 'Nasdaq',     invert: false },
-  { symbol: 'TLT',     label: '10Y Yields', invert: true  },
-  { symbol: 'GLD',     label: 'Gold',       invert: false },
-  { symbol: 'UUP',     label: 'DXY',        invert: false },
-  { symbol: 'BTC/USD', label: 'Bitcoin',    invert: false },
-  // Futures
-  { symbol: 'ES',  label: 'S&P Fut',   invert: false, exchange: 'CME',   isFuture: true },
-  { symbol: 'NQ',  label: 'NQ Fut',    invert: false, exchange: 'CME',   isFuture: true },
-  { symbol: 'ZN',  label: 'Bond Fut',  invert: false, exchange: 'CBOT',  isFuture: true },
-  { symbol: 'CL',  label: 'Oil Fut',   invert: false, exchange: 'NYMEX', isFuture: true },
+const SYMBOLS: Array<{ symbol: string; label: string; invert: boolean; isFuture?: boolean }> = [
+  { symbol: 'ES=F',     label: 'S&P Fut',  invert: false, isFuture: true  },
+  { symbol: 'NQ=F',     label: 'NQ Fut',   invert: false, isFuture: true  },
+  { symbol: 'YM=F',     label: 'Dow Fut',  invert: false, isFuture: true  },
+  { symbol: 'ZN=F',     label: 'Bond Fut', invert: false, isFuture: true  },
+  { symbol: 'CL=F',     label: 'Oil Fut',  invert: false, isFuture: true  },
+  { symbol: 'GC=F',     label: 'Gold',     invert: false, isFuture: true  },
+  { symbol: 'BTC-USD',  label: 'Bitcoin',  invert: false, isFuture: false },
+  { symbol: 'DX-Y.NYB', label: 'DXY',      invert: false, isFuture: false },
 ];
 
 // ---------------------------------------------------------------------------
-// 15-minute in-memory cache (serverless — resets on cold start, acceptable)
+// 15-minute in-memory cache
 // ---------------------------------------------------------------------------
 
-let cachedResult: MarketData | null  = null;
-let cacheExpiresAt: number           = 0;
-const CACHE_TTL_MS                   = 15 * 60 * 1000; // 15 minutes
+let cachedResult: MarketData | null = null;
+let cacheExpiresAt: number          = 0;
+const CACHE_TTL_MS                  = 15 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Core fetch
@@ -49,58 +47,68 @@ export async function fetchMarketData(): Promise<MarketData> {
     return cachedResult;
   }
 
-  const apiKey = process.env.TWELVE_DATA_API_KEY;
-  if (!apiKey) {
-    return { enabled: false, prices: [], last_updated: new Date().toISOString() };
-  }
-
   try {
-    // Exchange-qualified symbols (futures) use "SYMBOL:EXCHANGE" format in the API
-    // and are keyed the same way in the batch response.
-    const symbolString = SYMBOLS.map(s => s.exchange ? `${s.symbol}:${s.exchange}` : s.symbol).join(',');
-    const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symbolString)}&apikey=${apiKey}`;
+    const symbolString = SYMBOLS.map(s => s.symbol).join(',');
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbolString)}`;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10_000);
     let res: Response;
     try {
-      res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+      res = await fetch(url, {
+        signal: controller.signal,
+        cache:  'no-store',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; TheBoard/1.0)',
+          'Accept':     'application/json',
+        },
+      });
     } finally {
       clearTimeout(timer);
     }
 
-    if (!res.ok) throw new Error(`Twelve Data HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Yahoo Finance HTTP ${res.status}`);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw: Record<string, any> = await res.json();
+    const json: any = await res.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results: any[] = json?.quoteResponse?.result ?? [];
+
+    if (results.length === 0) throw new Error('Yahoo Finance returned empty result');
+
+    // Build a map from Yahoo symbol → quote
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const quoteMap = new Map<string, any>(results.map((q: any) => [q.symbol, q]));
 
     const prices: MarketPrice[] = SYMBOLS.flatMap(s => {
-      const responseKey = s.exchange ? `${s.symbol}:${s.exchange}` : s.symbol;
-      // Batch response is keyed by symbol (or symbol:exchange); fall back to raw itself for single-symbol
-      const q = raw[responseKey] ?? raw;
+      const q = quoteMap.get(s.symbol);
+      if (!q) return [];
 
-      // Skip symbols that returned an error object
-      if (!q || typeof q !== 'object' || q.code || q.status === 'error') return [];
+      const price     = q.regularMarketPrice     ?? 0;
+      const prevClose = q.regularMarketPreviousClose ?? 0;
+      const change    = q.regularMarketChangePercent ?? 0;
 
-      const price     = parseFloat(q.close ?? q.price ?? '0') || 0;
-      const prevClose = parseFloat(q.previous_close ?? '0')   || 0;
-      const change    = prevClose > 0
-        ? Math.round((price - prevClose) / prevClose * 10_000) / 100
-        : 0;
+      // Yahoo gives regularMarketTime as Unix seconds
+      const priceTime = q.regularMarketTime
+        ? new Date(q.regularMarketTime * 1000).toISOString()
+        : undefined;
+
+      if (!price) return [];
 
       return [{
         symbol:    s.symbol,
         label:     s.label,
         price,
-        change,
+        change:    Math.round(change * 100) / 100,
         prevClose,
         isUp:      change >= 0,
         invert:    s.invert,
         isFuture:  s.isFuture ?? false,
+        timestamp: priceTime,
       }];
     });
 
-    console.log(`[MarketData] Fetched ${prices.length}/${SYMBOLS.length} symbols`);
+    console.log(`[MarketData] Fetched ${prices.length}/${SYMBOLS.length} symbols via Yahoo Finance`);
 
     const result: MarketData = {
       enabled:      prices.length > 0,
@@ -108,8 +116,8 @@ export async function fetchMarketData(): Promise<MarketData> {
       last_updated: new Date().toISOString(),
     };
 
-    cachedResult    = result;
-    cacheExpiresAt  = Date.now() + CACHE_TTL_MS;
+    cachedResult   = result;
+    cacheExpiresAt = Date.now() + CACHE_TTL_MS;
     return result;
 
   } catch (err) {

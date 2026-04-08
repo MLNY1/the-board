@@ -1,11 +1,11 @@
 'use client';
 
 /**
- * MarketTicker — 52px horizontal strip shown only during weekday Yom Tov
+ * MarketTicker — horizontal strip shown only during weekday Yom Tov
  * (or when ?market=true for testing). Prices come from digest meta.market.
  *
- * TLT is inverted: price ↓ = yields ↑, so colors are flipped.
- * Bitcoin is abbreviated ($67.2K). Gold/Oil show $. SPY/QQQ: comma ints.
+ * Each cell shows: label / price / % change / time of quote.
+ * Prices are sourced from Yahoo Finance and carry per-symbol timestamps.
  */
 
 import type { MarketPrice } from '@/types';
@@ -16,41 +16,44 @@ interface MarketTickerProps {
 }
 
 // ---------------------------------------------------------------------------
-// Price formatting
+// Formatting helpers
 // ---------------------------------------------------------------------------
 
 function formatPrice(p: MarketPrice): string {
   const { symbol, price } = p;
 
-  if (symbol === 'BTC/USD') {
-    if (price >= 1000) return `$${(price / 1000).toFixed(1)}K`;
-    return `$${Math.round(price)}`;
+  if (symbol === 'BTC-USD') {
+    return `$${(price / 1000).toFixed(1)}K`;
   }
-  if (symbol === 'GLD') {
-    return `$${Math.round(price).toLocaleString('en-US')}`;
+  if (symbol === 'CL=F') {
+    return `$${price.toFixed(2)}`;         // oil: dollars per barrel
   }
-  if (symbol === 'CL') {
-    return `$${price.toFixed(2)}`;   // oil futures in dollars per barrel
+  if (symbol === 'ZN=F') {
+    return price.toFixed(2);               // bond futures: price per $100 face
   }
-  if (symbol === 'ZN') {
-    return price.toFixed(2);         // bond futures price (per $100 face)
+  if (symbol === 'GC=F') {
+    return `$${Math.round(price).toLocaleString('en-US')}`; // gold: $ per oz
   }
-  if (symbol === 'ES' || symbol === 'NQ') {
-    return Math.round(price).toLocaleString('en-US'); // index futures, whole number
+  if (symbol === 'DX-Y.NYB') {
+    return price.toFixed(2);               // dollar index
   }
-  if (symbol === 'USO') {
-    return `$${price.toFixed(1)}`;
+  if (symbol === 'ES=F' || symbol === 'NQ=F' || symbol === 'YM=F') {
+    return Math.round(price).toLocaleString('en-US'); // index futures: whole number
   }
-  if (symbol === 'UUP') {
-    return price.toFixed(2);
-  }
-  // SPY, QQQ — comma int
   return Math.round(price).toLocaleString('en-US');
 }
 
-function formatChange(p: MarketPrice): string {
-  const sign = p.change >= 0 ? '+' : '';
-  return `${sign}${p.change.toFixed(1)}%`;
+function formatChange(change: number): string {
+  const sign = change >= 0 ? '+' : '';
+  return `${sign}${change.toFixed(2)}%`;
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', {
+    hour:   'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -58,53 +61,62 @@ function formatChange(p: MarketPrice): string {
 // ---------------------------------------------------------------------------
 
 function Cell({ p }: { p: MarketPrice }) {
-  // For inverted instruments (TLT), flip the visual signal:
-  //   TLT price ↑ = yields ↓ = good (green)
-  //   TLT price ↓ = yields ↑ = bad  (red)
-  const visuallyUp = p.invert ? !p.isUp : p.isUp;
-  const changeColor = visuallyUp ? '#4a8c5c' : '#c0392b';
-
-  const priceDisplay = p.invert
-    ? (p.isUp ? 'Yields ↓' : 'Yields ↑')
-    : formatPrice(p);
-
-  const priceColor = p.invert ? changeColor : 'var(--text-primary)';
-
-  // For TLT, invert the sign so the change reflects yield movement, not ETF price movement
-  const changeDisplay = p.invert
-    ? `${p.change <= 0 ? '+' : ''}${(-p.change).toFixed(2)}%`
-    : formatChange(p);
+  const changeColor = p.isUp ? '#4a8c5c' : '#c0392b';
 
   return (
-    <div style={{ textAlign: 'center', minWidth: '90px', flex: '0 0 auto' }}>
+    <div style={{
+      textAlign:  'center',
+      minWidth:   '88px',
+      flex:       '0 0 auto',
+      padding:    '0 6px',
+      borderRight: '1px solid rgba(255,255,255,0.06)',
+    }}>
+      {/* Label */}
       <div style={{
         fontFamily:    'var(--font-body)',
-        fontSize:      '11px',
+        fontSize:      '10px',
         color:         'var(--text-muted)',
         letterSpacing: '1px',
         textTransform: 'uppercase',
-        marginBottom:  '2px',
+        marginBottom:  '1px',
       }}>
         {p.label}
       </div>
+
+      {/* Price */}
       <div style={{
         fontFamily: 'var(--font-mono)',
-        fontSize:   '15px',
-        color:      priceColor,
+        fontSize:   '14px',
+        color:      'var(--text-primary)',
         fontWeight: 500,
         lineHeight: 1,
       }}>
-        {priceDisplay}
+        {formatPrice(p)}
       </div>
+
+      {/* % change */}
       <div style={{
         fontFamily: 'var(--font-mono)',
-        fontSize:   '12px',
+        fontSize:   '11px',
         fontWeight: 600,
         color:      changeColor,
         marginTop:  '1px',
       }}>
-        {changeDisplay}
+        {formatChange(p.change)}
       </div>
+
+      {/* Per-price timestamp */}
+      {p.timestamp && (
+        <div style={{
+          fontFamily: 'var(--font-body)',
+          fontSize:   '9px',
+          color:      'var(--text-dim)',
+          marginTop:  '2px',
+          whiteSpace: 'nowrap',
+        }}>
+          {formatTime(p.timestamp)}
+        </div>
+      )}
     </div>
   );
 }
@@ -113,45 +125,25 @@ function Cell({ p }: { p: MarketPrice }) {
 // Ticker strip
 // ---------------------------------------------------------------------------
 
-export default function MarketTicker({ prices, lastUpdated }: MarketTickerProps) {
+export default function MarketTicker({ prices }: MarketTickerProps) {
   if (!prices.length) return null;
-
-  const timeLabel = lastUpdated
-    ? new Date(lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-    : null;
 
   return (
     <div
       className="market-ticker"
       style={{
-        display:        'flex',
-        alignItems:     'center',
-        justifyContent: 'space-around',
-        padding:        '8px 28px',
-        borderBottom:   '1px solid var(--border-card)',
-        background:     'rgba(26, 22, 16, 0.6)',
-        height:         '52px',
-        flexShrink:     0,
-        overflowX:      'auto',
-        maxWidth:       '100%',
-        gap:            '8px',
+        display:      'flex',
+        alignItems:   'center',
+        padding:      '6px 16px',
+        borderBottom: '1px solid var(--border-card)',
+        background:   'rgba(26, 22, 16, 0.6)',
+        minHeight:    '62px',
+        flexShrink:   0,
+        overflowX:    'auto',
+        gap:          '0',
       }}
     >
       {prices.map(p => <Cell key={p.symbol} p={p} />)}
-      {timeLabel && (
-        <div style={{
-          fontFamily:  'var(--font-body)',
-          fontSize:    '10px',
-          color:       'var(--text-dim)',
-          letterSpacing: '0.5px',
-          flexShrink:  0,
-          alignSelf:   'flex-end',
-          paddingBottom: '3px',
-          marginLeft:  '8px',
-        }}>
-          as of {timeLabel}
-        </div>
-      )}
     </div>
   );
 }

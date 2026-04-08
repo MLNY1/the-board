@@ -90,6 +90,7 @@ export interface MarketPrice {
   isUp:      boolean;
   invert:    boolean;  // true for TLT — price down = yields up
   isFuture?: boolean;
+  timestamp?: string;  // ISO string of when this specific price is from (Yahoo regularMarketTime)
 }
 
 export interface MarketData {
