@@ -17,14 +17,19 @@
 
 import type { MarketPrice, MarketData } from '@/types';
 
-const SYMBOLS: Array<{ symbol: string; label: string; invert: boolean }> = [
+const SYMBOLS: Array<{ symbol: string; label: string; invert: boolean; exchange?: string; isFuture?: boolean }> = [
+  // Spot / ETF
   { symbol: 'SPY',     label: 'S&P 500',    invert: false },
   { symbol: 'QQQ',     label: 'Nasdaq',     invert: false },
   { symbol: 'TLT',     label: '10Y Yields', invert: true  },
-  { symbol: 'UUP',     label: 'DXY',        invert: false },
-  { symbol: 'USO',     label: 'Crude Oil',  invert: false },
   { symbol: 'GLD',     label: 'Gold',       invert: false },
+  { symbol: 'UUP',     label: 'DXY',        invert: false },
   { symbol: 'BTC/USD', label: 'Bitcoin',    invert: false },
+  // Futures
+  { symbol: 'ES',  label: 'S&P Fut',   invert: false, exchange: 'CME',   isFuture: true },
+  { symbol: 'NQ',  label: 'NQ Fut',    invert: false, exchange: 'CME',   isFuture: true },
+  { symbol: 'ZN',  label: 'Bond Fut',  invert: false, exchange: 'CBOT',  isFuture: true },
+  { symbol: 'CL',  label: 'Oil Fut',   invert: false, exchange: 'NYMEX', isFuture: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -50,7 +55,9 @@ export async function fetchMarketData(): Promise<MarketData> {
   }
 
   try {
-    const symbolString = SYMBOLS.map(s => s.symbol).join(',');
+    // Exchange-qualified symbols (futures) use "SYMBOL:EXCHANGE" format in the API
+    // and are keyed the same way in the batch response.
+    const symbolString = SYMBOLS.map(s => s.exchange ? `${s.symbol}:${s.exchange}` : s.symbol).join(',');
     const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symbolString)}&apikey=${apiKey}`;
 
     const controller = new AbortController();
@@ -68,8 +75,9 @@ export async function fetchMarketData(): Promise<MarketData> {
     const raw: Record<string, any> = await res.json();
 
     const prices: MarketPrice[] = SYMBOLS.flatMap(s => {
-      // Batch response is keyed by symbol; fall back to raw itself for single-symbol
-      const q = raw[s.symbol] ?? raw;
+      const responseKey = s.exchange ? `${s.symbol}:${s.exchange}` : s.symbol;
+      // Batch response is keyed by symbol (or symbol:exchange); fall back to raw itself for single-symbol
+      const q = raw[responseKey] ?? raw;
 
       // Skip symbols that returned an error object
       if (!q || typeof q !== 'object' || q.code || q.status === 'error') return [];
@@ -86,8 +94,9 @@ export async function fetchMarketData(): Promise<MarketData> {
         price,
         change,
         prevClose,
-        isUp:   change >= 0,
-        invert: s.invert,
+        isUp:      change >= 0,
+        invert:    s.invert,
+        isFuture:  s.isFuture ?? false,
       }];
     });
 

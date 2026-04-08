@@ -89,6 +89,7 @@ export interface MarketPrice {
   prevClose: number;
   isUp:      boolean;
   invert:    boolean;  // true for TLT — price down = yields up
+  isFuture?: boolean;
 }
 
 export interface MarketData {

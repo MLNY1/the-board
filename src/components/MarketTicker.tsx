@@ -29,6 +29,15 @@ function formatPrice(p: MarketPrice): string {
   if (symbol === 'GLD') {
     return `$${Math.round(price).toLocaleString('en-US')}`;
   }
+  if (symbol === 'CL') {
+    return `$${price.toFixed(2)}`;   // oil futures in dollars per barrel
+  }
+  if (symbol === 'ZN') {
+    return price.toFixed(2);         // bond futures price (per $100 face)
+  }
+  if (symbol === 'ES' || symbol === 'NQ') {
+    return Math.round(price).toLocaleString('en-US'); // index futures, whole number
+  }
   if (symbol === 'USO') {
     return `$${price.toFixed(1)}`;
   }
