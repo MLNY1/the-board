@@ -351,8 +351,8 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
         </div>
       )}
 
-      {/* Market ticker — only during active Shabbos/Yom Tov */}
-      {marketData.enabled && isShabbosMode && <MarketTicker prices={marketData.prices} lastUpdated={marketData.last_updated} />}
+      {/* Market ticker — hidden during Shabbos/Yom Tov, shown on weekdays */}
+      {marketData.enabled && !isShabbosMode && <MarketTicker prices={marketData.prices} lastUpdated={marketData.last_updated} />}
 
       {/* Content area — fades on transitions */}
       <div
