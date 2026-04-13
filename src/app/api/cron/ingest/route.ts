@@ -641,13 +641,13 @@ export async function GET(req: NextRequest) {
       const defaultZipG2 = process.env.DEFAULT_ZIP ?? '11598';
       const activeWindowG2 = await getActiveWindow(defaultZipG2).catch(() => null);
       const isShabbosOrYT = activeWindowG2 !== null;
-      const minIntervalMs  = isShabbosOrYT ? 90 * 60 * 1000 : 24 * 60 * 60 * 1000;
+      const minIntervalMs  = isShabbosOrYT ? 90 * 60 * 1000 : 6 * 60 * 60 * 1000;
       const surgeThreshold = isShabbosOrYT ? 30 : 999;
-      log.push(`[Guard2] ${isShabbosOrYT ? 'Shabbos/YT mode (90min gate, surge@30)' : 'Weekday mode (24h gate, surge disabled)'}, digest age ${Math.round(digestAgeMs / 60000)}min`);
+      log.push(`[Guard2] ${isShabbosOrYT ? 'Shabbos/YT mode (90min gate, surge@30)' : 'Weekday mode (6h gate, surge disabled)'}, digest age ${Math.round(digestAgeMs / 60000)}min`);
 
       if (digestAgeMs < minIntervalMs && toProcess.length < surgeThreshold) {
-        console.log(`[Ingest] Skipping Claude — digest ${Math.round(digestAgeMs / 60000)}min old, interval ${isShabbosOrYT ? '90min' : '24h'}`);
-        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old (< ${isShabbosOrYT ? '90min' : '24h'}) and no surge (${toProcess.length} < ${surgeThreshold})`);
+        console.log(`[Ingest] Skipping Claude — digest ${Math.round(digestAgeMs / 60000)}min old, interval ${isShabbosOrYT ? '90min' : '6h'}`);
+        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old (< ${isShabbosOrYT ? '90min' : '6h'}) and no surge (${toProcess.length} < ${surgeThreshold})`);
         // fall through to pruning
       } else {
       // ── Clean up stale digest stories before cap check ────────────────────

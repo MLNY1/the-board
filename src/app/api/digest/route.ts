@@ -41,7 +41,9 @@ export async function GET(req: NextRequest) {
     // Determine time window for story retrieval
     // -----------------------------------------------------------------------
     const now = new Date();
-    const cutoff12h = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+    // 8h window keeps stories visible across the full 6h gap between weekday runs.
+    // During Shabbos/YT the active-window logic below extends it further.
+    const cutoffBase = new Date(now.getTime() - 8 * 60 * 60 * 1000);
 
     // Fetch Shabbos/YT state concurrently
     const [activeWindow, shabbosWindow] = await Promise.allSettled([
@@ -52,10 +54,9 @@ export async function GET(req: NextRequest) {
     const active  = activeWindow.status  === 'fulfilled' ? activeWindow.value  : null;
     const shabbos = shabbosWindow.status === 'fulfilled' ? shabbosWindow.value : null;
 
-    // If Shabbos is active, show stories since Shabbos started (not just 12h).
-    // Use whichever cutoff gives MORE stories.
-    let storyCutoff: Date = cutoff12h;
-    if (active?.start && active.start < cutoff12h) {
+    // If Shabbos/YT is active, show stories since it started (never less than cutoffBase).
+    let storyCutoff: Date = cutoffBase;
+    if (active?.start && active.start < cutoffBase) {
       storyCutoff = active.start;
     }
 
