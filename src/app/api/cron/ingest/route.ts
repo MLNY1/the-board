@@ -635,18 +635,19 @@ export async function GET(req: NextRequest) {
         ? Date.now() - new Date(latestDigest.created_at).getTime()
         : Infinity;
 
-      // During Shabbos/Yom Tov keep the board fresh: allow Claude every 50 min.
-      // On regular weekdays there's less urgency: only call every 4 hours.
-      // Either way, a surge of 30+ new articles (breaking news) overrides the gate.
+      // During Shabbos/Yom Tov: refresh every 90 min; surge override at 30+ articles.
+      // On weekdays: once per day (24h gate); surge override disabled (threshold 999)
+      // so normal news flow never bypasses the gate — saves ~95% of weekday Claude cost.
       const defaultZipG2 = process.env.DEFAULT_ZIP ?? '11598';
       const activeWindowG2 = await getActiveWindow(defaultZipG2).catch(() => null);
       const isShabbosOrYT = activeWindowG2 !== null;
-      const minIntervalMs = isShabbosOrYT ? 90 * 60 * 1000 : 8 * 60 * 60 * 1000;
-      log.push(`[Guard2] ${isShabbosOrYT ? 'Shabbos/YT mode (90min gate)' : 'Weekday mode (8h gate)'}, digest age ${Math.round(digestAgeMs / 60000)}min`);
+      const minIntervalMs  = isShabbosOrYT ? 90 * 60 * 1000 : 24 * 60 * 60 * 1000;
+      const surgeThreshold = isShabbosOrYT ? 30 : 999;
+      log.push(`[Guard2] ${isShabbosOrYT ? 'Shabbos/YT mode (90min gate, surge@30)' : 'Weekday mode (24h gate, surge disabled)'}, digest age ${Math.round(digestAgeMs / 60000)}min`);
 
-      if (digestAgeMs < minIntervalMs && toProcess.length < 30) {
-        console.log(`[Ingest] Skipping Claude — digest ${Math.round(digestAgeMs / 60000)}min old, interval ${isShabbosOrYT ? '90min' : '8h'}`);
-        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old (< ${isShabbosOrYT ? '90min' : '8h'}) and no article surge (${toProcess.length} < 30)`);
+      if (digestAgeMs < minIntervalMs && toProcess.length < surgeThreshold) {
+        console.log(`[Ingest] Skipping Claude — digest ${Math.round(digestAgeMs / 60000)}min old, interval ${isShabbosOrYT ? '90min' : '24h'}`);
+        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old (< ${isShabbosOrYT ? '90min' : '24h'}) and no surge (${toProcess.length} < ${surgeThreshold})`);
         // fall through to pruning
       } else {
       // ── Clean up stale digest stories before cap check ────────────────────
