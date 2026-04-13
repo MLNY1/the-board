@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
       .gte('created_at', storyCutoff.toISOString())
       .order('importance_score', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(60);
 
     if (error) {
       console.error('Digest query error:', error);
@@ -101,6 +101,27 @@ export async function GET(req: NextRequest) {
 
     // Headline similarity dedup — catches near-duplicates that share a topic_slug
     // or slipped through ingest dedup with different slugs.
+    //
+    // Two layers:
+    //   1. Jaccard word-overlap (threshold 0.35) — catches paraphrases
+    //   2. Key-concept co-occurrence — catches same-event stories with different wording
+    //      e.g. "US-Iran ceasefire holds" vs "US-Iran ceasefire stalls" both share
+    //      {iran, ceasefire} → 2 concept overlap → deduplicated
+    const KEY_CONCEPTS = [
+      'iran', 'ceasefire', 'israel', 'israeli', 'gaza', 'hamas', 'hezbollah',
+      'ukraine', 'russia', 'trump', 'china', 'nato', 'lebanon', 'nuclear',
+      'bitcoin', 'fed', 'tariff', 'ai', 'dollar', 'hostage', 'war', 'sanctions',
+      'netanyahu', 'zelensky', 'putin', 'election', 'inflation', 'recession',
+    ];
+    const extractConcepts = (h: string) => {
+      const lower = h.toLowerCase().replace(/[^\w\s]/g, ' ');
+      return KEY_CONCEPTS.filter(c => lower.includes(c));
+    };
+    const conceptOverlap = (a: string, b: string) => {
+      const bSet = new Set(extractConcepts(b));
+      return extractConcepts(a).filter(c => bSet.has(c)).length;
+    };
+
     const headlineSeen: DigestStory[] = [];
     const headlineJaccard = (a: string, b: string) => {
       const words = (s: string) => new Set(s.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean));
@@ -113,7 +134,10 @@ export async function GET(req: NextRequest) {
       if (!seenIds.has(story.id)) continue;
       // Skip slug losers (a higher-scored story already covers this slug)
       if (story.topic_slug && seenSlugs.get(story.topic_slug)?.id !== story.id) continue;
-      if (headlineSeen.some(k => headlineJaccard(story.headline, k.headline) >= 0.4)) continue;
+      if (headlineSeen.some(k =>
+        headlineJaccard(story.headline, k.headline) >= 0.35 ||
+        conceptOverlap(story.headline, k.headline) >= 2
+      )) continue;
       headlineSeen.push(story);
     }
 
@@ -132,6 +156,17 @@ export async function GET(req: NextRequest) {
     // Market data — always fetched (Yahoo Finance, free, no API key)
     // -----------------------------------------------------------------------
     const market: MarketData = await fetchMarketData();
+
+    // -----------------------------------------------------------------------
+    // Claude availability — check for credit-error sentinel in raw_articles
+    // -----------------------------------------------------------------------
+    const { data: creditSentinel } = await supabase
+      .from('raw_articles')
+      .select('fetched_at')
+      .eq('source_name', '__system__')
+      .eq('category', 'claude_credit_error')
+      .maybeSingle();
+    const claudeUnavailable = creditSentinel !== null;
 
     // -----------------------------------------------------------------------
     // Build response
@@ -164,6 +199,7 @@ export async function GET(req: NextRequest) {
         },
         next_refresh_seconds: NEXT_REFRESH_SECONDS,
         market,
+        claude_unavailable: claudeUnavailable || undefined,
       },
     };
 

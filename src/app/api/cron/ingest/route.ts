@@ -391,6 +391,13 @@ async function fetchNewsApiArticles(category: string): Promise<
 // AI processing
 // ---------------------------------------------------------------------------
 
+class ClaudeCreditsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ClaudeCreditsError';
+  }
+}
+
 async function processWithClaude(
   articles: Pick<RawArticle, 'id' | 'title' | 'description' | 'content' | 'source_name' | 'source_url' | 'published_at'>[]
 ): Promise<ClaudeStory[]> {
@@ -404,17 +411,29 @@ async function processWithClaude(
     published_at: a.published_at ?? '',
   }));
 
-  const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 8000,
-    system: CLAUDE_SYSTEM_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: `Process these ${articles.length} news articles and return the JSON response:\n\n${JSON.stringify(articlesSummary, null, 2)}`,
-      },
-    ],
-  });
+  let message;
+  try {
+    message = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 4096,
+      system: CLAUDE_SYSTEM_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: `Process these ${articles.length} news articles and return the JSON response:\n\n${JSON.stringify(articlesSummary, null, 2)}`,
+        },
+      ],
+    });
+  } catch (err) {
+    // Detect credit exhaustion (HTTP 402) or authentication errors
+    if (err instanceof Anthropic.APIError) {
+      const msg = err.message ?? '';
+      if (err.status === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('balance')) {
+        throw new ClaudeCreditsError(msg || 'Claude credit balance exhausted');
+      }
+    }
+    throw err;
+  }
 
   const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
   const stopReason = message.stop_reason;
@@ -622,12 +641,12 @@ export async function GET(req: NextRequest) {
       const defaultZipG2 = process.env.DEFAULT_ZIP ?? '11598';
       const activeWindowG2 = await getActiveWindow(defaultZipG2).catch(() => null);
       const isShabbosOrYT = activeWindowG2 !== null;
-      const minIntervalMs = isShabbosOrYT ? 50 * 60 * 1000 : 4 * 60 * 60 * 1000;
-      log.push(`[Guard2] ${isShabbosOrYT ? 'Shabbos/YT mode (50min gate)' : 'Weekday mode (4h gate)'}, digest age ${Math.round(digestAgeMs / 60000)}min`);
+      const minIntervalMs = isShabbosOrYT ? 90 * 60 * 1000 : 8 * 60 * 60 * 1000;
+      log.push(`[Guard2] ${isShabbosOrYT ? 'Shabbos/YT mode (90min gate)' : 'Weekday mode (8h gate)'}, digest age ${Math.round(digestAgeMs / 60000)}min`);
 
       if (digestAgeMs < minIntervalMs && toProcess.length < 30) {
-        console.log(`[Ingest] Skipping Claude — digest ${Math.round(digestAgeMs / 60000)}min old, interval ${isShabbosOrYT ? '50min' : '4h'}`);
-        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old (< ${isShabbosOrYT ? '50min' : '4h'}) and no article surge (${toProcess.length} < 30)`);
+        console.log(`[Ingest] Skipping Claude — digest ${Math.round(digestAgeMs / 60000)}min old, interval ${isShabbosOrYT ? '90min' : '8h'}`);
+        log.push(`Skipping Claude: digest is ${Math.round(digestAgeMs / 60000)}min old (< ${isShabbosOrYT ? '90min' : '8h'}) and no article surge (${toProcess.length} < 30)`);
         // fall through to pruning
       } else {
       // ── Clean up stale digest stories before cap check ────────────────────
@@ -731,16 +750,37 @@ export async function GET(req: NextRequest) {
       const coveredIds: string[] = [];
       const jpCurrentCount = existingSourceStories.get('Jerusalem Post')?.length ?? 0;
 
+      // Key-concept list for semantic coverage detection.
+      // If an article title shares 2+ key concepts with an existing headline,
+      // it's almost certainly about the same underlying event — skip it.
+      const INGEST_KEY_CONCEPTS = [
+        'iran', 'ceasefire', 'israel', 'israeli', 'gaza', 'hamas', 'hezbollah',
+        'ukraine', 'russia', 'trump', 'china', 'nato', 'lebanon', 'nuclear',
+        'bitcoin', 'fed', 'tariff', 'dollar', 'hostage', 'war', 'sanctions',
+        'netanyahu', 'zelensky', 'putin', 'election', 'inflation', 'recession',
+      ];
+      const articleConcepts = (title: string) => {
+        const lower = title.toLowerCase().replace(/[^\w\s]/g, ' ');
+        return INGEST_KEY_CONCEPTS.filter(c => lower.includes(c));
+      };
+
       const toSendToClaude = toProcess.filter(article => {
         const isJP = article.source_name === 'Jerusalem Post';
         // JP articles bypass coverage pre-filter when JP is below its guaranteed floor
         if (isJP && jpCurrentCount < JP_FLOOR) return true;
 
         const articleKW = stemmedKeyWords(article.title);
+        const artConcepts = articleConcepts(article.title);
         const covered = existingHeadlines.some(h => {
           if (jaccardSimilarity(article.title, h) > 0.4) return true;
           const storyKW = new Set(stemmedKeyWords(h));
-          return articleKW.filter(w => storyKW.has(w)).length >= 3;
+          if (articleKW.filter(w => storyKW.has(w)).length >= 3) return true;
+          // Concept overlap: 2+ shared key topics = same event
+          if (artConcepts.length >= 2) {
+            const hConcepts = new Set(articleConcepts(h));
+            if (artConcepts.filter(c => hConcepts.has(c)).length >= 2) return true;
+          }
+          return false;
         });
         if (covered) coveredIds.push(article.id);
         return !covered;
@@ -762,7 +802,7 @@ export async function GET(req: NextRequest) {
       const hScored = toSendToClaude
         .map(a => ({ article: a, hs: heuristicScore(a, hNow) }))
         .sort((x, y) => y.hs - x.hs);
-      const TARGET_BATCH = 20;
+      const TARGET_BATCH = 15;
       const batchForClaude = hScored.slice(0, TARGET_BATCH).map(x => x.article);
       const hDropped = hScored.slice(TARGET_BATCH).map(x => x.article);
       if (hDropped.length > 0) {
@@ -780,7 +820,27 @@ export async function GET(req: NextRequest) {
         await supabase.from('raw_articles').update({ processed: true }).in('id', batchForClaude.map(a => a.id));
       } else {
       log.push(`Sending ${batchForClaude.length} articles to Claude (top heuristic score: ${topHScore})`);
-      const stories = await processWithClaude(batchForClaude);
+      let stories: ClaudeStory[];
+      try {
+        stories = await processWithClaude(batchForClaude);
+        // Success — clear any stale credit-error sentinel
+        await supabase.from('raw_articles').delete()
+          .eq('source_name', '__system__').eq('category', 'claude_credit_error');
+      } catch (err) {
+        if (err instanceof ClaudeCreditsError) {
+          log.push(`Claude credits exhausted: ${err.message}`);
+          console.error('[Ingest] Claude credits exhausted — writing sentinel');
+          await supabase.from('raw_articles').insert({
+            title: 'Claude credit balance exhausted — AI feed updates paused',
+            source_name: '__system__',
+            category: 'claude_credit_error',
+            description: null, content: null, source_url: null,
+            published_at: null, image_url: null, processed: true, duplicate_of: null,
+          });
+          return NextResponse.json({ ok: true, log });
+        }
+        throw err;
+      }
       log.push(`Claude returned ${stories.length} stories`);
 
       // ── Hard minimum: drop genuinely trivial stories (below 30) ─────────────

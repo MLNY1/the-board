@@ -306,6 +306,7 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
 
   const isShabbosMode: boolean = data?.meta.shabbos.is_active ?? false;
   const marketData: MarketData = data?.meta.market ?? { enabled: false, prices: [], last_updated: '' };
+  const claudeUnavailable: boolean = data?.meta.claude_unavailable ?? false;
   const shabbosWindowMeta: ShabbosWindowMeta = data?.meta.shabbos ?? {
     is_active: false, window_start: null, window_end: null, parsha: null, location_label: null,
   };
@@ -332,8 +333,26 @@ export default function BoardDashboard({ initialData }: BoardDashboardProps) {
         isShabbosMode={isShabbosMode}
       />
 
-      {/* Market ticker — only during weekday Yom Tov (or ?market=true) */}
-      {marketData.enabled && <MarketTicker prices={marketData.prices} lastUpdated={marketData.last_updated} />}
+      {/* Claude credit exhaustion warning */}
+      {claudeUnavailable && (
+        <div style={{
+          flexShrink:   0,
+          background:   'rgba(224,82,82,0.12)',
+          borderBottom: '1px solid rgba(224,82,82,0.25)',
+          color:        '#e05252',
+          fontFamily:   'var(--font-body)',
+          fontSize:     '11px',
+          letterSpacing:'0.8px',
+          textTransform:'uppercase',
+          padding:      '5px 16px',
+          textAlign:    'center',
+        }}>
+          AI credit balance exhausted — feed updates paused
+        </div>
+      )}
+
+      {/* Market ticker — only during active Shabbos/Yom Tov */}
+      {marketData.enabled && isShabbosMode && <MarketTicker prices={marketData.prices} lastUpdated={marketData.last_updated} />}
 
       {/* Content area — fades on transitions */}
       <div

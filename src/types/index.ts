@@ -105,6 +105,7 @@ export interface DigestMeta {
   shabbos: ShabbosWindowMeta;
   next_refresh_seconds: number;
   market: MarketData;
+  claude_unavailable?: boolean;
 }
 
 export interface DigestResponse {
