@@ -9,7 +9,7 @@
  *  5. Insert unique articles into raw_articles
  *  6. AI-process unprocessed articles in batches of 30 with Claude
  *  7. Insert resulting DigestStory rows into digest_stories
- *  8. Prune raw_articles older than 72h to keep DB lean
+ *  8. Prune raw_articles older than 24h to keep DB lean
  *
  * Triggered by Vercel Cron every 20 minutes.
  * Can also be triggered manually: GET /api/cron/ingest?secret=<CRON_SECRET>
@@ -1112,17 +1112,18 @@ export async function GET(req: NextRequest) {
     }
 
     // -----------------------------------------------------------------------
-    // Step 5: Prune raw_articles older than 72h to prevent DB bloat
+    // Step 5: Prune raw_articles older than 24h to prevent DB bloat
     // -----------------------------------------------------------------------
+    // 24h matches the dedup window so nothing useful is discarded.
     // Prune in batches of 500 to avoid statement timeouts on large tables.
-    const cutoff72h = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+    const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     let pruneTotal = 0;
     let pruneErr: string | null = null;
     for (let i = 0; i < 20; i++) {
       const { data: batch } = await supabase
         .from('raw_articles')
         .select('id')
-        .lt('fetched_at', cutoff72h)
+        .lt('fetched_at', cutoff24h)
         .limit(500);
       if (!batch || batch.length === 0) break;
       const ids = batch.map((r) => r.id);
@@ -1132,7 +1133,7 @@ export async function GET(req: NextRequest) {
       if (ids.length < 500) break;
     }
     if (pruneErr) log.push(`Prune error: ${pruneErr}`);
-    else log.push(`Pruned ${pruneTotal} old articles`);
+    else log.push(`Pruned ${pruneTotal} old articles (>24h)`);
 
     // -----------------------------------------------------------------------
     // Done

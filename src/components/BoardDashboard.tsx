@@ -24,7 +24,7 @@ import type { DigestResponse, DigestStoryItem, MarketData, ShabbosWindowMeta } f
 // Constants
 // ---------------------------------------------------------------------------
 
-const POLL_INTERVAL_MS    = 60_000;
+const POLL_INTERVAL_MS    = 120_000;
 const HERO_BREAKING_MS    = 20_000;
 const HERO_MAJOR_MS       = 12_000;
 const OVERVIEW_MS         = 15_000;

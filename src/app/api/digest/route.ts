@@ -17,7 +17,7 @@ import { fetchMarketData } from '@/lib/market-data';
 import type { DigestResponse, DigestStory, MarketData } from '@/types';
 
 const DEFAULT_ZIP = process.env.DEFAULT_ZIP ?? '11598';
-const NEXT_REFRESH_SECONDS = 60; // matches the frontend polling interval
+const NEXT_REFRESH_SECONDS = 120; // matches the frontend polling interval
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -204,10 +204,10 @@ export async function GET(req: NextRequest) {
       },
     };
 
-    // Cache for 30s — fresh enough for polling, reduces DB load
+    // Cache for 120s — matches frontend polling interval, reduces DB read IO
     return NextResponse.json(response, {
       headers: {
-        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=30',
+        'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=60',
       },
     });
   } catch (err) {
