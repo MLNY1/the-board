@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     const now = new Date();
     // 8h window keeps stories visible across the full 6h gap between weekday runs.
     // During Shabbos/YT the active-window logic below extends it further.
-    const cutoffBase = new Date(now.getTime() - 8 * 60 * 60 * 1000);
+    const cutoffBase = new Date(now.getTime() - 12 * 60 * 60 * 1000);
 
     // Fetch Shabbos/YT state concurrently
     const [activeWindow, shabbosWindow] = await Promise.allSettled([
@@ -136,8 +136,8 @@ export async function GET(req: NextRequest) {
       // Skip slug losers (a higher-scored story already covers this slug)
       if (story.topic_slug && seenSlugs.get(story.topic_slug)?.id !== story.id) continue;
       if (headlineSeen.some(k =>
-        headlineJaccard(story.headline, k.headline) >= 0.35 ||
-        conceptOverlap(story.headline, k.headline) >= 2
+        headlineJaccard(story.headline, k.headline) >= 0.45 ||
+        conceptOverlap(story.headline, k.headline) >= 3
       )) continue;
       headlineSeen.push(story);
     }
