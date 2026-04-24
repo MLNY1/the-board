@@ -30,7 +30,10 @@ function isPriority(alert: AlertItem): boolean {
 function formatLocalTime(alertDate: string): string {
   if (!alertDate) return '';
   try {
-    return new Date(alertDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const d    = new Date(alertDate);
+    const date = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `${date} · ${time}`;
   } catch { return ''; }
 }
 
