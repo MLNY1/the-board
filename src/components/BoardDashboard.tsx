@@ -13,6 +13,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useWakeLock } from '@/hooks/useWakeLock';
 import ShabbosHeader from './ShabbosHeader';
 import HeroStory from './HeroStory';
 import StoryCard from './StoryCard';
@@ -44,6 +45,8 @@ interface BoardDashboardProps {
 }
 
 export default function BoardDashboard({ initialData }: BoardDashboardProps) {
+  useWakeLock();
+
   // ── Render state ──────────────────────────────────────────────────────────
   const [data, setData]                    = useState<DigestResponse | null>(initialData);
   const [isStale, setIsStale]              = useState(false);
